@@ -128,19 +128,19 @@ Resources:
             ".",
             ["api", !Ref ClusterName, !Join ["", [!Ref HostedZoneName, "."]]],
           ]
-        Type: A
-        AliasTarget:
-          HostedZoneId: !GetAtt IntApiElb.CanonicalHostedZoneID
-          DNSName: !GetAtt IntApiElb.DNSName
+        Type: CNAME
+        TTL: 10
+        ResourceRecords:
+        - !GetAtt IntApiElb.DNSName
       - Name:
           !Join [
             ".",
             ["api-int", !Ref ClusterName, !Join ["", [!Ref HostedZoneName, "."]]],
           ]
-        Type: A
-        AliasTarget:
-          HostedZoneId: !GetAtt IntApiElb.CanonicalHostedZoneID
-          DNSName: !GetAtt IntApiElb.DNSName
+        Type: CNAME
+        TTL: 10
+        ResourceRecords:
+        - !GetAtt IntApiElb.DNSName
 
   ExternalApiListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
