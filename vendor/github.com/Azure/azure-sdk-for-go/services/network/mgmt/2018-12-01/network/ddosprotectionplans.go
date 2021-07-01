@@ -35,7 +35,9 @@ func NewDdosProtectionPlansClient(subscriptionID string) DdosProtectionPlansClie
 	return NewDdosProtectionPlansClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewDdosProtectionPlansClientWithBaseURI creates an instance of the DdosProtectionPlansClient client.
+// NewDdosProtectionPlansClientWithBaseURI creates an instance of the DdosProtectionPlansClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewDdosProtectionPlansClientWithBaseURI(baseURI string, subscriptionID string) DdosProtectionPlansClient {
 	return DdosProtectionPlansClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -64,7 +66,7 @@ func (client DdosProtectionPlansClient) CreateOrUpdate(ctx context.Context, reso
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -101,13 +103,38 @@ func (client DdosProtectionPlansClient) CreateOrUpdatePreparer(ctx context.Conte
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client DdosProtectionPlansClient) CreateOrUpdateSender(req *http.Request) (future DdosProtectionPlansCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DdosProtectionPlansClient) (dpp DdosProtectionPlan, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.DdosProtectionPlansCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		dpp.Response.Response, err = future.GetResult(sender)
+		if dpp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && dpp.Response.Response.StatusCode != http.StatusNoContent {
+			dpp, err = client.CreateOrUpdateResponder(dpp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansCreateOrUpdateFuture", "Result", dpp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -116,7 +143,6 @@ func (client DdosProtectionPlansClient) CreateOrUpdateSender(req *http.Request) 
 func (client DdosProtectionPlansClient) CreateOrUpdateResponder(resp *http.Response) (result DdosProtectionPlan, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -147,7 +173,7 @@ func (client DdosProtectionPlansClient) Delete(ctx context.Context, resourceGrou
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -178,13 +204,28 @@ func (client DdosProtectionPlansClient) DeletePreparer(ctx context.Context, reso
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client DdosProtectionPlansClient) DeleteSender(req *http.Request) (future DdosProtectionPlansDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DdosProtectionPlansClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.DdosProtectionPlansDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -193,7 +234,6 @@ func (client DdosProtectionPlansClient) DeleteSender(req *http.Request) (future 
 func (client DdosProtectionPlansClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -231,6 +271,7 @@ func (client DdosProtectionPlansClient) Get(ctx context.Context, resourceGroupNa
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -260,8 +301,7 @@ func (client DdosProtectionPlansClient) GetPreparer(ctx context.Context, resourc
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client DdosProtectionPlansClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -269,7 +309,6 @@ func (client DdosProtectionPlansClient) GetSender(req *http.Request) (*http.Resp
 func (client DdosProtectionPlansClient) GetResponder(resp *http.Response) (result DdosProtectionPlan, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -306,6 +345,11 @@ func (client DdosProtectionPlansClient) List(ctx context.Context) (result DdosPr
 	result.dpplr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.dpplr.hasNextLink() && result.dpplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -333,8 +377,7 @@ func (client DdosProtectionPlansClient) ListPreparer(ctx context.Context) (*http
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client DdosProtectionPlansClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -342,7 +385,6 @@ func (client DdosProtectionPlansClient) ListSender(req *http.Request) (*http.Res
 func (client DdosProtectionPlansClient) ListResponder(resp *http.Response) (result DdosProtectionPlanListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -418,6 +460,11 @@ func (client DdosProtectionPlansClient) ListByResourceGroup(ctx context.Context,
 	result.dpplr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.dpplr.hasNextLink() && result.dpplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -446,8 +493,7 @@ func (client DdosProtectionPlansClient) ListByResourceGroupPreparer(ctx context.
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client DdosProtectionPlansClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -455,7 +501,6 @@ func (client DdosProtectionPlansClient) ListByResourceGroupSender(req *http.Requ
 func (client DdosProtectionPlansClient) ListByResourceGroupResponder(resp *http.Response) (result DdosProtectionPlanListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -524,7 +569,7 @@ func (client DdosProtectionPlansClient) UpdateTags(ctx context.Context, resource
 
 	result, err = client.UpdateTagsSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "UpdateTags", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansClient", "UpdateTags", nil, "Failure sending request")
 		return
 	}
 
@@ -557,13 +602,38 @@ func (client DdosProtectionPlansClient) UpdateTagsPreparer(ctx context.Context, 
 // UpdateTagsSender sends the UpdateTags request. The method will close the
 // http.Response Body if it receives an error.
 func (client DdosProtectionPlansClient) UpdateTagsSender(req *http.Request) (future DdosProtectionPlansUpdateTagsFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DdosProtectionPlansClient) (dpp DdosProtectionPlan, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansUpdateTagsFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.DdosProtectionPlansUpdateTagsFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		dpp.Response.Response, err = future.GetResult(sender)
+		if dpp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansUpdateTagsFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && dpp.Response.Response.StatusCode != http.StatusNoContent {
+			dpp, err = client.UpdateTagsResponder(dpp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansUpdateTagsFuture", "Result", dpp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -572,7 +642,6 @@ func (client DdosProtectionPlansClient) UpdateTagsSender(req *http.Request) (fut
 func (client DdosProtectionPlansClient) UpdateTagsResponder(resp *http.Response) (result DdosProtectionPlan, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

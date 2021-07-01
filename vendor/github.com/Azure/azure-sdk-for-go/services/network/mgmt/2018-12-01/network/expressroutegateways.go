@@ -36,7 +36,9 @@ func NewExpressRouteGatewaysClient(subscriptionID string) ExpressRouteGatewaysCl
 	return NewExpressRouteGatewaysClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewExpressRouteGatewaysClientWithBaseURI creates an instance of the ExpressRouteGatewaysClient client.
+// NewExpressRouteGatewaysClientWithBaseURI creates an instance of the ExpressRouteGatewaysClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewExpressRouteGatewaysClientWithBaseURI(baseURI string, subscriptionID string) ExpressRouteGatewaysClient {
 	return ExpressRouteGatewaysClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -72,7 +74,7 @@ func (client ExpressRouteGatewaysClient) CreateOrUpdate(ctx context.Context, res
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -106,13 +108,38 @@ func (client ExpressRouteGatewaysClient) CreateOrUpdatePreparer(ctx context.Cont
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteGatewaysClient) CreateOrUpdateSender(req *http.Request) (future ExpressRouteGatewaysCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ExpressRouteGatewaysClient) (erg ExpressRouteGateway, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.ExpressRouteGatewaysCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		erg.Response.Response, err = future.GetResult(sender)
+		if erg.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && erg.Response.Response.StatusCode != http.StatusNoContent {
+			erg, err = client.CreateOrUpdateResponder(erg.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysCreateOrUpdateFuture", "Result", erg.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -121,7 +148,6 @@ func (client ExpressRouteGatewaysClient) CreateOrUpdateSender(req *http.Request)
 func (client ExpressRouteGatewaysClient) CreateOrUpdateResponder(resp *http.Response) (result ExpressRouteGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -153,7 +179,7 @@ func (client ExpressRouteGatewaysClient) Delete(ctx context.Context, resourceGro
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -184,13 +210,28 @@ func (client ExpressRouteGatewaysClient) DeletePreparer(ctx context.Context, res
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteGatewaysClient) DeleteSender(req *http.Request) (future ExpressRouteGatewaysDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ExpressRouteGatewaysClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.ExpressRouteGatewaysDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -199,7 +240,6 @@ func (client ExpressRouteGatewaysClient) DeleteSender(req *http.Request) (future
 func (client ExpressRouteGatewaysClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -237,6 +277,7 @@ func (client ExpressRouteGatewaysClient) Get(ctx context.Context, resourceGroupN
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -266,8 +307,7 @@ func (client ExpressRouteGatewaysClient) GetPreparer(ctx context.Context, resour
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteGatewaysClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -275,7 +315,6 @@ func (client ExpressRouteGatewaysClient) GetSender(req *http.Request) (*http.Res
 func (client ExpressRouteGatewaysClient) GetResponder(resp *http.Response) (result ExpressRouteGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -313,6 +352,7 @@ func (client ExpressRouteGatewaysClient) ListByResourceGroup(ctx context.Context
 	result, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -341,8 +381,7 @@ func (client ExpressRouteGatewaysClient) ListByResourceGroupPreparer(ctx context
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteGatewaysClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -350,7 +389,6 @@ func (client ExpressRouteGatewaysClient) ListByResourceGroupSender(req *http.Req
 func (client ExpressRouteGatewaysClient) ListByResourceGroupResponder(resp *http.Response) (result ExpressRouteGatewayList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -386,6 +424,7 @@ func (client ExpressRouteGatewaysClient) ListBySubscription(ctx context.Context)
 	result, err = client.ListBySubscriptionResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysClient", "ListBySubscription", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -413,8 +452,7 @@ func (client ExpressRouteGatewaysClient) ListBySubscriptionPreparer(ctx context.
 // ListBySubscriptionSender sends the ListBySubscription request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteGatewaysClient) ListBySubscriptionSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListBySubscriptionResponder handles the response to the ListBySubscription request. The method always
@@ -422,7 +460,6 @@ func (client ExpressRouteGatewaysClient) ListBySubscriptionSender(req *http.Requ
 func (client ExpressRouteGatewaysClient) ListBySubscriptionResponder(resp *http.Response) (result ExpressRouteGatewayList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

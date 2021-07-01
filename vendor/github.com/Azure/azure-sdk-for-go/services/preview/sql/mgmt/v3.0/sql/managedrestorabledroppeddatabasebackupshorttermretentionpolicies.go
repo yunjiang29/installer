@@ -39,7 +39,8 @@ func NewManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient(s
 }
 
 // NewManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClientWithBaseURI creates an instance of the
-// ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient client.
+// ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient client using a custom endpoint.  Use this
+// when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClientWithBaseURI(baseURI string, subscriptionID string) ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient {
 	return ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -69,7 +70,7 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -104,13 +105,38 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) CreateOrUpdateSender(req *http.Request) (future ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) (mbstrp ManagedBackupShortTermRetentionPolicy, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		mbstrp.Response.Response, err = future.GetResult(sender)
+		if mbstrp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && mbstrp.Response.Response.StatusCode != http.StatusNoContent {
+			mbstrp, err = client.CreateOrUpdateResponder(mbstrp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCreateOrUpdateFuture", "Result", mbstrp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -119,7 +145,6 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) CreateOrUpdateResponder(resp *http.Response) (result ManagedBackupShortTermRetentionPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -159,6 +184,7 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -190,8 +216,7 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -199,7 +224,6 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) GetResponder(resp *http.Response) (result ManagedBackupShortTermRetentionPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -240,6 +264,11 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 	result.mbstrplr, err = client.ListByRestorableDroppedDatabaseResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient", "ListByRestorableDroppedDatabase", resp, "Failure responding to request")
+		return
+	}
+	if result.mbstrplr.hasNextLink() && result.mbstrplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -270,8 +299,7 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 // ListByRestorableDroppedDatabaseSender sends the ListByRestorableDroppedDatabase request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) ListByRestorableDroppedDatabaseSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByRestorableDroppedDatabaseResponder handles the response to the ListByRestorableDroppedDatabase request. The method always
@@ -279,7 +307,6 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) ListByRestorableDroppedDatabaseResponder(resp *http.Response) (result ManagedBackupShortTermRetentionPolicyListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -349,7 +376,7 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -384,13 +411,38 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) UpdateSender(req *http.Request) (future ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) (mbstrp ManagedBackupShortTermRetentionPolicy, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		mbstrp.Response.Response, err = future.GetResult(sender)
+		if mbstrp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && mbstrp.Response.Response.StatusCode != http.StatusNoContent {
+			mbstrp, err = client.UpdateResponder(mbstrp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesUpdateFuture", "Result", mbstrp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -399,7 +451,6 @@ func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesCli
 func (client ManagedRestorableDroppedDatabaseBackupShortTermRetentionPoliciesClient) UpdateResponder(resp *http.Response) (result ManagedBackupShortTermRetentionPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

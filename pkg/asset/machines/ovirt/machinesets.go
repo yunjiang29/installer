@@ -4,7 +4,7 @@ package ovirt
 import (
 	"fmt"
 
-	machineapi "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	machineapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
@@ -30,8 +30,8 @@ func MachineSets(clusterID string, config *types.InstallConfig, pool *types.Mach
 		total = *pool.Replicas
 	}
 
-	provider := provider(platform, pool, userDataSecret, osImage)
-	name := fmt.Sprintf("%s-%s-%d", clusterID, pool.Name, 0)
+	provider := provider(platform, pool, userDataSecret, clusterID, osImage)
+	name := fmt.Sprintf("%s-%s", clusterID, pool.Name)
 	mset := &machineapi.MachineSet{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machine.openshift.io/v1beta1",
@@ -55,7 +55,7 @@ func MachineSets(clusterID string, config *types.InstallConfig, pool *types.Mach
 				},
 			},
 			Template: machineapi.MachineTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
+				ObjectMeta: machineapi.ObjectMeta{
 					Labels: map[string]string{
 						"machine.openshift.io/cluster-api-machineset":   name,
 						"machine.openshift.io/cluster-api-cluster":      clusterID,

@@ -9,9 +9,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	machineapi "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/azure"
+	machineapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	azureprovider "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 )
 
@@ -85,6 +85,8 @@ func provider(platform *azure.Platform, mpool *azure.MachinePool, osImage string
 		az = &mpool.Zones[*azIdx]
 	}
 
+	rg := platform.ClusterResourceGroupName(clusterID)
+
 	networkResourceGroup, virtualNetwork, subnet, err := getNetworkInfo(platform, clusterID, role)
 	if err != nil {
 		return nil, err
@@ -92,6 +94,16 @@ func provider(platform *azure.Platform, mpool *azure.MachinePool, osImage string
 
 	if mpool.OSDisk.DiskType == "" {
 		mpool.OSDisk.DiskType = "Premium_LRS"
+	}
+
+	publicLB := clusterID
+	if platform.OutboundType == azure.UserDefinedRoutingOutboundType {
+		publicLB = ""
+	}
+
+	managedIdentity := fmt.Sprintf("%s-identity", clusterID)
+	if platform.IsARO() {
+		managedIdentity = ""
 	}
 
 	return &azureprovider.AzureMachineProviderSpec{
@@ -104,21 +116,22 @@ func provider(platform *azure.Platform, mpool *azure.MachinePool, osImage string
 		Location:          platform.Region,
 		VMSize:            mpool.InstanceType,
 		Image: azureprovider.Image{
-			ResourceID: fmt.Sprintf("/resourceGroups/%s/providers/Microsoft.Compute/images/%s", clusterID+"-rg", clusterID),
+			ResourceID: fmt.Sprintf("/resourceGroups/%s/providers/Microsoft.Compute/images/%s", rg, clusterID),
 		},
 		OSDisk: azureprovider.OSDisk{
 			OSType:     "Linux",
 			DiskSizeGB: mpool.OSDisk.DiskSizeGB,
-			ManagedDisk: azureprovider.ManagedDisk{
+			ManagedDisk: azureprovider.ManagedDiskParameters{
 				StorageAccountType: mpool.OSDisk.DiskType,
 			},
 		},
 		Zone:                 az,
 		Subnet:               subnet,
-		ManagedIdentity:      fmt.Sprintf("%s-identity", clusterID),
+		ManagedIdentity:      managedIdentity,
 		Vnet:                 virtualNetwork,
-		ResourceGroup:        fmt.Sprintf("%s-rg", clusterID),
+		ResourceGroup:        rg,
 		NetworkResourceGroup: networkResourceGroup,
+		PublicLoadBalancer:   publicLB,
 	}, nil
 }
 
@@ -129,7 +142,7 @@ func ConfigMasters(machines []machineapi.Machine, clusterID string) {
 
 func getNetworkInfo(platform *azure.Platform, clusterID, role string) (string, string, string, error) {
 	if platform.VirtualNetwork == "" {
-		return fmt.Sprintf("%s-rg", clusterID), fmt.Sprintf("%s-vnet", clusterID), fmt.Sprintf("%s-%s-subnet", clusterID, role), nil
+		return platform.ClusterResourceGroupName(clusterID), fmt.Sprintf("%s-vnet", clusterID), fmt.Sprintf("%s-%s-subnet", clusterID, role), nil
 	}
 
 	switch role {

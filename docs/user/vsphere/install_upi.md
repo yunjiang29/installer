@@ -34,7 +34,7 @@ NOTE: The cluster requires the bootstrap machine to deploy the OpenShift cluster
 
 The bootstrap and control plane machines must use Red Hat Enterprise Linux CoreOS (RHCOS) as the operating system.
 
-All of the VMs created must reside within the same folder in all of the vCenters used. For example, if the VM folder used is named MyFolder, then all of the VMs running OpenShift must be in the MyFolder folder.
+All of the VMs created must reside within the same folder. See [the note below](#check-folder-name-in-cloud-provider-manifest) for details about folder naming.
 
 The disk UUID on the VMs must be enabled: the `disk.EnableUUID` value must be set to `True`. This step is necessary so that the VMDK always presents a consistent UUID to the VM, thus allowing the disk to be mounted properly.
 
@@ -216,6 +216,17 @@ From within the `INSTALL_DIR`:
 $ rm -f openshift/99_openshift-cluster-api_master-machines-*.yaml openshift/99_openshift-cluster-api_worker-machineset-*.yaml
 ```
 
+#### Check Folder Name in Cloud Provider Manifest
+
+An absolute path to the cluster VM folder is specified in the `cloud-provider-config.yaml` manifest. The vSphere Cloud Provider uses the specified folder for cluster operations, such as provisioning volumes. The folder path can be specified in the install-config (see [customization.md](customization.md)) or the default value will be a top-level folder named with the infrastructure ID.
+
+```console
+$ cat vsphere-test/manifests/cloud-provider-config.yaml | grep folder
+    folder = "/<datacenter>/vm/test-kndtw"
+```
+
+For successful cluster operation, VMs will need to be created in a folder matching the path specified in the cloud-provider config.
+
 ### Invoking the installer to get Ignition configs
 
 Given that you have setup the `INSTALL_DIR` with the appropriate manifests, you can create the Ignition configs by using the `create ignition-configs` target. For example,
@@ -258,106 +269,26 @@ The Ignition config created by the OpenShift Installer cannot be used directly b
 {
   "ignition": {
     "config": {
-      "append": [
+      "merge": [
         {
           "source": "bootstrap_ignition_config_url",
-          "verification": {}
         }
       ]
     },
-    "timeouts": {},
-    "version": "2.1.0"
+    "version": "3.1.0"
   },
-  "networkd": {},
-  "passwd": {},
-  "storage": {},
-  "systemd": {}
 }
 ```
-### Hostname
+
+## Configuring Hostname and Static IP Addresses with Afterburn
 
 The hostname of each control plane and worker machine must be resolvable from all nodes within the cluster.
 
-Preferrably, the hostname will be set via DHCP. If you need to manually set a hostname, you can create a hostname file by adding an entry in the `.storage.files` list in an Ignition config.
+Preferrably, the hostname and IP address will be set via DHCP.
 
-For example, the following Ignition config will create a hostname file that sets the hostname of a machine to `control-plane-0.
+If you need to manually set a hostname and/or configure a static IP address, you can pass a custom networking command-line `ip=` parameter to Afterburn for configuration. In order to do so, set the vApp property `guestinfo.afterburn.initrd.network-kargs` to the `ip` parameter using this format: `ip=<ip_address>::<gateway>:<netmask>:<hostname>:<iface>:<protocol>:<dns_address>`, e.g. `ip=10.0.0.2::10.0.0.2:255.255.255.0:compute-1:ens192:none:8.8.8.8`
 
-```json
-{
-  "ignition": {
-    "config": {},
-    "timeouts": {},
-    "version": "2.1.0"
-  },
-  "networkd": {},
-  "passwd": {},
-  "storage": {
-    "files": [
-      {
-        "filesystem": "root",
-        "group": {},
-        "path": "/etc/hostname",
-        "user": {},
-        "contents": {
-          "source": "data:text/plain;charset=utf-8,control-plane-0",
-          "verification": {}
-        },
-        "mode": 420
-      }
-    ]
-  },
-  "systemd": {}
-}
-```
-
-### Static IP Addresses
-
-Preferrably, the IP address for each machine will be set via DHCP. If you need to use a static IP address, you can be set one for a machine by creating an ifcfg file. You can create an ifcfg file by adding an entry in the `.storage.files` list in an Ignition config.
-
-For example, the following Ignition config will create an ifcfg file that sets the IP address of the ens192 device to 10.0.0.2.
-
-```json
-{
-  "ignition": {
-    "config": {},
-    "timeouts": {},
-    "version": "2.1.0"
-  },
-  "networkd": {},
-  "passwd": {},
-  "storage": {
-    "files": [
-      {
-        "filesystem": "root",
-        "group": {},
-        "path": "/etc/sysconfig/network-scripts/ifcfg-ens192",
-        "user": {},
-        "contents": {
-          "source": "data:text/plain;charset=utf-8;base64,VFlQRT1FdGhlcm5ldApCT09UUFJPVE89bm9uZQpOQU1FPWVuczE5MgpERVZJQ0U9ZW5zMTkyCk9OQk9PVD15ZXMKSVBBRERSPTEwLjAuMC4yClBSRUZJWD0yNApHQVRFV0FZPTEwLjAuMC4xCkRPTUFJTj1teWRvbWFpbi5jb20KRE5TMT04LjguOC44",
-          "verification": {}
-        },
-        "mode": 420
-      }
-    ]
-  },
-  "systemd": {}
-}
-```
-
-The ifcfg file will have the following contents.
-
-```
-TYPE=Ethernet
-BOOTPROTO=none
-NAME=ens192
-DEVICE=ens192
-ONBOOT=yes
-IPADDR=10.0.0.2
-PREFIX=24
-GATEWAY=10.0.0.1
-DOMAIN=mydomain.com
-DNS1=8.8.8.8
-```
+The full syntax of the `ip=` parameter is documented in the [Dracut manpages](https://www.man7.org/linux/man-pages/man7/dracut.cmdline.7.html).
 
 ## Watching your installation
 
@@ -411,11 +342,12 @@ cd test-vsphere
 create_tfvars.sh
 ```
 
-At a minimum, you will need to provide values for the following variables.
-* bootstrap_ignition_url
-* bootstrap_ip
-* control_plane_ips
-* compute_ips
+At a minimum, you need to set values for the following variables.
+* cluster_id
+* cluster_domain
+* vsphere_user
+* vsphere_password
+* ipam_token OR bootstrap_ip, control_plane_ips, and compute_ips
 
 Move the `tfvars` file to the directory with the example Terraform.
 

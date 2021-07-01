@@ -7,19 +7,23 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/openshift/installer/pkg/asset"
-	azureconfig "github.com/openshift/installer/pkg/asset/installconfig/azure"
 	gcpconfig "github.com/openshift/installer/pkg/asset/installconfig/gcp"
+	ibmcloudconfig "github.com/openshift/installer/pkg/asset/installconfig/ibmcloud"
+	kubevirtconfig "github.com/openshift/installer/pkg/asset/installconfig/kubevirt"
 	openstackconfig "github.com/openshift/installer/pkg/asset/installconfig/openstack"
 	ovirtconfig "github.com/openshift/installer/pkg/asset/installconfig/ovirt"
 	"github.com/openshift/installer/pkg/types/aws"
 	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/baremetal"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
+	"github.com/openshift/installer/pkg/types/kubevirt"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	"github.com/openshift/installer/pkg/types/none"
 	"github.com/openshift/installer/pkg/types/openstack"
 	"github.com/openshift/installer/pkg/types/ovirt"
 	"github.com/openshift/installer/pkg/types/vsphere"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // PlatformCredsCheck is an asset that checks the platform credentials, asks for them or errors out if invalid
@@ -55,23 +59,40 @@ func (a *PlatformCredsCheck) Generate(dependencies asset.Parents) error {
 		if err != nil {
 			return errors.Wrap(err, "creating GCP session")
 		}
+	case ibmcloud.Name:
+		_, err = ibmcloudconfig.NewClient()
+		if err != nil {
+			return errors.Wrap(err, "creating IBM Cloud session")
+		}
 	case openstack.Name:
 		_, err = openstackconfig.GetSession(ic.Config.Platform.OpenStack.Cloud)
+		if err != nil {
+			return errors.Wrap(err, "creating OpenStack session")
+		}
 	case baremetal.Name, libvirt.Name, none.Name, vsphere.Name:
 		// no creds to check
 	case azure.Name:
-		_, err = azureconfig.GetSession()
+		_, err = ic.Azure.Session()
 		if err != nil {
 			return errors.Wrap(err, "creating Azure session")
 		}
 	case ovirt.Name:
 		con, err := ovirtconfig.NewConnection()
 		if err != nil {
-			return errors.Wrap(err, "creating oVirt connection")
+			return errors.Wrap(err, "creating Engine connection")
 		}
 		err = con.Test()
 		if err != nil {
-			return errors.Wrap(err, "testing ovirt connection")
+			return errors.Wrap(err, "testing Engine connection")
+		}
+	case kubevirt.Name:
+		client, err := kubevirtconfig.NewClient()
+		if err != nil {
+			return errors.Wrap(err, "creating KubeVirt client")
+		}
+		// Test the connection to InfraCluster by calling ListVM API
+		if _, err = client.ListVirtualMachine(context.Background(), ic.Config.Platform.Kubevirt.Namespace, metav1.ListOptions{}); err != nil {
+			return errors.Wrap(err, "testing KubeVirt connection")
 		}
 	default:
 		err = fmt.Errorf("unknown platform type %q", platform)

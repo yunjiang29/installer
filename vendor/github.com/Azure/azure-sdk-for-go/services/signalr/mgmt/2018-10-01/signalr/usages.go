@@ -35,7 +35,8 @@ func NewUsagesClient(subscriptionID string) UsagesClient {
 	return NewUsagesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewUsagesClientWithBaseURI creates an instance of the UsagesClient client.
+// NewUsagesClientWithBaseURI creates an instance of the UsagesClient client using a custom endpoint.  Use this when
+// interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewUsagesClientWithBaseURI(baseURI string, subscriptionID string) UsagesClient {
 	return UsagesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -71,6 +72,11 @@ func (client UsagesClient) List(ctx context.Context, location string) (result Us
 	result.ul, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "signalr.UsagesClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.ul.hasNextLink() && result.ul.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -99,8 +105,7 @@ func (client UsagesClient) ListPreparer(ctx context.Context, location string) (*
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client UsagesClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -108,7 +113,6 @@ func (client UsagesClient) ListSender(req *http.Request) (*http.Response, error)
 func (client UsagesClient) ListResponder(resp *http.Response) (result UsageList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

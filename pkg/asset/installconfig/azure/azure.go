@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
+	survey "github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/core"
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/pkg/errors"
 
 	"github.com/openshift/installer/pkg/types/azure"
-
-	"github.com/pkg/errors"
-	survey "gopkg.in/AlecAivazis/survey.v1"
 )
 
 const (
@@ -21,12 +20,21 @@ const (
 
 // Platform collects azure-specific configuration.
 func Platform() (*azure.Platform, error) {
-	regions, err := getRegions()
+	// Create client using public cloud because install config has not been generated yet.
+	const cloudName = azure.PublicCloud
+	ssn, err := GetSession(cloudName, "")
+	if err != nil {
+		return nil, err
+	}
+
+	client := NewClient(ssn)
+
+	regions, err := getRegions(context.TODO(), client)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get list of regions")
 	}
 
-	resourceCapableRegions, err := getResourceCapableRegions()
+	resourceCapableRegions, err := getResourceCapableRegions(context.TODO(), client)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get list of resources to check available regions")
 	}
@@ -43,9 +51,15 @@ func Platform() (*azure.Platform, error) {
 		}
 	}
 
-	regionTransform := survey.TransformString(func(s string) string {
-		return strings.SplitN(s, " ", 2)[0]
-	})
+	var regionTransform survey.Transformer = func(ans interface{}) interface{} {
+		switch v := ans.(type) {
+		case core.OptionAnswer:
+			return core.OptionAnswer{Value: strings.SplitN(v.Value, " ", 2)[0], Index: v.Index}
+		case string:
+			return strings.SplitN(v, " ", 2)[0]
+		}
+		return ""
+	}
 
 	_, ok := regions[defaultRegion]
 	if !ok {
@@ -65,7 +79,7 @@ func Platform() (*azure.Platform, error) {
 				Options: longRegions,
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				choice := regionTransform(ans).(string)
+				choice := regionTransform(ans).(core.OptionAnswer).Value
 				i := sort.SearchStrings(shortRegions, choice)
 				if i == len(shortRegions) || shortRegions[i] != choice {
 					return errors.Errorf("invalid region %q", choice)
@@ -80,19 +94,12 @@ func Platform() (*azure.Platform, error) {
 	}
 
 	return &azure.Platform{
-		Region: region,
+		Region:    region,
+		CloudName: cloudName,
 	}, nil
 }
 
-func getRegions() (map[string]string, error) {
-	client, err := NewClient(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
-	defer cancel()
-
+func getRegions(ctx context.Context, client API) (map[string]string, error) {
 	locations, err := client.ListLocations(ctx)
 	if err != nil {
 		return nil, err
@@ -105,15 +112,7 @@ func getRegions() (map[string]string, error) {
 	return allLocations, nil
 }
 
-func getResourceCapableRegions() ([]string, error) {
-	client, err := NewClient(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
-	defer cancel()
-
+func getResourceCapableRegions(ctx context.Context, client API) ([]string, error) {
 	provider, err := client.GetResourcesProvider(ctx, "Microsoft.Resources")
 	if err != nil {
 		return nil, err

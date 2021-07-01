@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/x509"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -29,12 +28,15 @@ import (
 	routeclient "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/installer/pkg/asset"
 	"github.com/openshift/installer/pkg/asset/installconfig"
+	"github.com/openshift/installer/pkg/asset/logging"
 	assetstore "github.com/openshift/installer/pkg/asset/store"
 	targetassets "github.com/openshift/installer/pkg/asset/targets"
 	destroybootstrap "github.com/openshift/installer/pkg/destroy/bootstrap"
+	"github.com/openshift/installer/pkg/gather/service"
 	timer "github.com/openshift/installer/pkg/metrics/timer"
 	"github.com/openshift/installer/pkg/types/baremetal"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
+	"github.com/openshift/library-go/pkg/route/routeapihelpers"
 )
 
 type target struct {
@@ -78,6 +80,16 @@ var (
 		},
 		assets: targetassets.IgnitionConfigs,
 	}
+	singleNodeIgnitionConfigTarget = target{
+		name: "Single Node Ignition Config",
+		command: &cobra.Command{
+			Use:   "single-node-ignition-config",
+			Short: "Generates the bootstrap-in-place-for-live-iso Ignition Config asset",
+			// FIXME: add longer descriptions for our commands with examples for better UX.
+			// Long:  "",
+		},
+		assets: targetassets.SingleNodeIgnitionConfig,
+	}
 
 	clusterTarget = target{
 		name: "Cluster",
@@ -92,21 +104,28 @@ var (
 				cleanup := setupFileHook(rootOpts.dir)
 				defer cleanup()
 
+				// FIXME: pulling the kubeconfig and metadata out of the root
+				// directory is a bit cludgy when we already have them in memory.
 				config, err := clientcmd.BuildConfigFromFlags("", filepath.Join(rootOpts.dir, "auth", "kubeconfig"))
 				if err != nil {
 					logrus.Fatal(errors.Wrap(err, "loading kubeconfig"))
 				}
 
 				timer.StartTimer("Bootstrap Complete")
-				err = waitForBootstrapComplete(ctx, config, rootOpts.dir)
-				if err != nil {
+				if err := waitForBootstrapComplete(ctx, config); err != nil {
 					if err2 := logClusterOperatorConditions(ctx, config); err2 != nil {
 						logrus.Error("Attempted to gather ClusterOperator status after installation failure: ", err2)
 					}
-					if err2 := runGatherBootstrapCmd(rootOpts.dir); err2 != nil {
+					bundlePath, err2 := runGatherBootstrapCmd(rootOpts.dir)
+					if err2 != nil {
 						logrus.Error("Attempted to gather debug logs after installation failure: ", err2)
 					}
-					logrus.Fatal("Bootstrap failed to complete: ", err)
+					logrus.Error("Bootstrap failed to complete: ", err.Unwrap())
+					logrus.Error(err.Error())
+					if err2 := service.AnalyzeGatherBundle(bundlePath); err2 != nil {
+						logrus.Error("Attempted to analyze the debug logs after installation failure: ", err2)
+					}
+					logrus.Fatal("Bootstrap failed to complete")
 				}
 				timer.StopTimer("Bootstrap Complete")
 				timer.StartTimer("Bootstrap Destroy")
@@ -128,6 +147,7 @@ var (
 					if err2 := logClusterOperatorConditions(ctx, config); err2 != nil {
 						logrus.Error("Attempted to gather ClusterOperator status after installation failure: ", err2)
 					}
+					logTroubleshootingLink()
 					logrus.Fatal(err)
 				}
 				timer.StopTimer(timer.TotalTimeElapsed)
@@ -137,8 +157,57 @@ var (
 		assets: targetassets.Cluster,
 	}
 
-	targets = []target{installConfigTarget, manifestsTarget, ignitionConfigsTarget, clusterTarget}
+	targets = []target{installConfigTarget, manifestsTarget, ignitionConfigsTarget, clusterTarget, singleNodeIgnitionConfigTarget}
 )
+
+// clusterCreateError defines a custom error type that would help identify where the error occurs
+// during the bootstrap phase of the installation process. This would help identify whether the error
+// comes either from the Kubernetes API failure, the bootstrap failure or a general kubernetes client
+// creation error. In the event of any error, this interface packages the error message and a custom
+// log message that must be neatly presented to the user before termination of the project.
+type clusterCreateError struct {
+	wrappedError error
+	logMessage   string
+}
+
+// Unwrap provides the actual stored error that occured during installation.
+func (ce *clusterCreateError) Unwrap() error {
+	return ce.wrappedError
+}
+
+// Error provides the actual stored error that occured during installation.
+func (ce *clusterCreateError) Error() string {
+	return ce.logMessage
+}
+
+// newAPIError creates a clusterCreateError object with a default error message specific to the API failure.
+func newAPIError(errorInfo error) *clusterCreateError {
+	return &clusterCreateError{
+		wrappedError: errorInfo,
+		logMessage: "Failed waiting for Kubernetes API. This error usually happens when there " +
+			"is a problem on the bootstrap host that prevents creating a temporary control plane.",
+	}
+}
+
+// newBootstrapError creates a clusterCreateError object with a default error message specific to the
+// bootstrap failure.
+func newBootstrapError(errorInfo error) *clusterCreateError {
+	return &clusterCreateError{
+		wrappedError: errorInfo,
+		logMessage: "Failed to wait for bootstrapping to complete. This error usually " +
+			"happens when there is a problem with control plane hosts that prevents " +
+			"the control plane operators from creating the control plane.",
+	}
+}
+
+// newClientError creates a clusterCreateError object with a default error message specific to the
+// kubernetes client creation failure.
+func newClientError(errorInfo error) *clusterCreateError {
+	return &clusterCreateError{
+		wrappedError: errorInfo,
+		logMessage:   "Failed to create a kubernetes client.",
+	}
+}
 
 func newCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -197,18 +266,22 @@ func runTargetCmd(targets ...asset.WritableAsset) func(cmd *cobra.Command, args 
 		if err != nil {
 			logrus.Fatal(err)
 		}
+		if cmd.Name() != "cluster" {
+			logrus.Infof(logging.LogCreatedFiles(cmd.Name(), rootOpts.dir, targets))
+		}
+
 	}
 }
 
 // addRouterCAToClusterCA adds router CA to cluster CA in kubeconfig
-func addRouterCAToClusterCA(config *rest.Config, directory string) (err error) {
+func addRouterCAToClusterCA(ctx context.Context, config *rest.Config, directory string) (err error) {
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return errors.Wrap(err, "creating a Kubernetes client")
 	}
 
 	// Configmap may not exist. log and accept not-found errors with configmap.
-	caConfigMap, err := client.CoreV1().ConfigMaps("openshift-config-managed").Get("default-ingress-cert", metav1.GetOptions{})
+	caConfigMap, err := client.CoreV1().ConfigMaps("openshift-config-managed").Get(ctx, "default-ingress-cert", metav1.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "fetching default-ingress-cert configmap from openshift-config-managed namespace")
 	}
@@ -246,12 +319,10 @@ func addRouterCAToClusterCA(config *rest.Config, directory string) (err error) {
 	return nil
 }
 
-// FIXME: pulling the kubeconfig and metadata out of the root
-// directory is a bit cludgy when we already have them in memory.
-func waitForBootstrapComplete(ctx context.Context, config *rest.Config, directory string) (err error) {
+func waitForBootstrapComplete(ctx context.Context, config *rest.Config) *clusterCreateError {
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return errors.Wrap(err, "creating a Kubernetes client")
+		return newClientError(errors.Wrap(err, "creating a Kubernetes client"))
 	}
 
 	discovery := client.Discovery()
@@ -293,9 +364,9 @@ func waitForBootstrapComplete(ctx context.Context, config *rest.Config, director
 	err = apiContext.Err()
 	if err != nil && err != context.Canceled {
 		if lastErr != nil {
-			return errors.Wrap(lastErr, "failed waiting for Kubernetes API")
+			return newAPIError(lastErr)
 		}
-		return errors.Wrap(err, "waiting for Kubernetes API")
+		return newAPIError(err)
 	}
 
 	return waitForBootstrapConfigMap(ctx, client)
@@ -304,8 +375,8 @@ func waitForBootstrapComplete(ctx context.Context, config *rest.Config, director
 // waitForBootstrapConfigMap watches the configmaps in the kube-system namespace
 // and waits for the bootstrap configmap to report that bootstrapping has
 // completed.
-func waitForBootstrapConfigMap(ctx context.Context, client *kubernetes.Clientset) error {
-	timeout := 40 * time.Minute
+func waitForBootstrapConfigMap(ctx context.Context, client *kubernetes.Clientset) *clusterCreateError {
+	timeout := 30 * time.Minute
 	logrus.Infof("Waiting up to %v for bootstrapping to complete...", timeout)
 
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -336,20 +407,22 @@ func waitForBootstrapConfigMap(ctx context.Context, client *kubernetes.Clientset
 			return status == "complete", nil
 		},
 	)
-
-	return errors.Wrap(err, "failed to wait for bootstrapping to complete")
+	if err != nil {
+		return newBootstrapError(err)
+	}
+	return nil
 }
 
 // waitForInitializedCluster watches the ClusterVersion waiting for confirmation
 // that the cluster has been initialized.
 func waitForInitializedCluster(ctx context.Context, config *rest.Config) error {
-	timeout := 30 * time.Minute
+	// TODO revert this value back to 30 minutes.  It's currently at the end of 4.6 and we're trying to see if the
+	timeout := 40 * time.Minute
 
 	// Wait longer for baremetal, due to length of time it takes to boot
 	if assetStore, err := assetstore.NewStore(rootOpts.dir); err == nil {
-		installConfig := &installconfig.InstallConfig{}
-		if err := assetStore.Fetch(installConfig); err == nil {
-			if installConfig.Config.Platform.Name() == baremetal.Name {
+		if installConfig, err := assetStore.Load(&installconfig.InstallConfig{}); err == nil && installConfig != nil {
+			if installConfig.(*installconfig.InstallConfig).Config.Platform.Name() == baremetal.Name {
 				timeout = 60 * time.Minute
 			}
 		}
@@ -413,7 +486,7 @@ func waitForInitializedCluster(ctx context.Context, config *rest.Config) error {
 }
 
 // waitForConsole returns the console URL from the route 'console' in namespace openshift-console
-func waitForConsole(ctx context.Context, config *rest.Config, directory string) (string, error) {
+func waitForConsole(ctx context.Context, config *rest.Config) (string, error) {
 	url := ""
 	// Need to keep these updated if they change
 	consoleNamespace := "openshift-console"
@@ -434,26 +507,21 @@ func waitForConsole(ctx context.Context, config *rest.Config, directory string) 
 	silenceRemaining := logDownsample
 	timer.StartTimer("Console")
 	wait.Until(func() {
-		consoleRoutes, err := rc.RouteV1().Routes(consoleNamespace).List(metav1.ListOptions{})
-		if err == nil && len(consoleRoutes.Items) > 0 {
-			for _, route := range consoleRoutes.Items {
-				logrus.Debugf("Route found in openshift-console namespace: %s", route.Name)
-				if route.Name == consoleRouteName {
-					url = fmt.Sprintf("https://%s", route.Spec.Host)
-				}
+		route, err := rc.RouteV1().Routes(consoleNamespace).Get(ctx, consoleRouteName, metav1.GetOptions{})
+		if err == nil {
+			logrus.Debugf("Route found in openshift-console namespace: %s", consoleRouteName)
+			if uri, _, err2 := routeapihelpers.IngressURI(route, ""); err2 == nil {
+				url = uri.String()
+				logrus.Debug("OpenShift console route is admitted")
+				cancel()
+			} else {
+				err = err2
 			}
-			logrus.Debug("OpenShift console route is created")
-			cancel()
-		} else if err != nil {
+		}
+		if err != nil {
 			silenceRemaining--
 			if silenceRemaining == 0 {
 				logrus.Debugf("Still waiting for the console route: %v", err)
-				silenceRemaining = logDownsample
-			}
-		} else if len(consoleRoutes.Items) == 0 {
-			silenceRemaining--
-			if silenceRemaining == 0 {
-				logrus.Debug("Still waiting for the console route...")
 				silenceRemaining = logDownsample
 			}
 		}
@@ -493,14 +561,21 @@ func waitForInstallComplete(ctx context.Context, config *rest.Config, directory 
 		return err
 	}
 
-	consoleURL, err := waitForConsole(ctx, config, rootOpts.dir)
+	consoleURL, err := waitForConsole(ctx, config)
 	if err != nil {
 		return err
 	}
 
-	if err = addRouterCAToClusterCA(config, rootOpts.dir); err != nil {
+	if err = addRouterCAToClusterCA(ctx, config, rootOpts.dir); err != nil {
 		return err
 	}
 
 	return logComplete(rootOpts.dir, consoleURL)
+}
+
+func logTroubleshootingLink() {
+	logrus.Error(`Cluster initialization failed because one or more operators are not functioning properly.
+The cluster should be accessible for troubleshooting as detailed in the documentation linked below,
+https://docs.openshift.com/container-platform/latest/support/troubleshooting/troubleshooting-installations.html
+The 'wait-for install-complete' subcommand can then be used to continue the installation`)
 }

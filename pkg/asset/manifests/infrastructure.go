@@ -1,7 +1,6 @@
 package manifests
 
 import (
-	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -17,16 +16,15 @@ import (
 	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/baremetal"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/kubevirt"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	"github.com/openshift/installer/pkg/types/none"
 	"github.com/openshift/installer/pkg/types/openstack"
-	openstackdefaults "github.com/openshift/installer/pkg/types/openstack/defaults"
 	"github.com/openshift/installer/pkg/types/ovirt"
 	"github.com/openshift/installer/pkg/types/vsphere"
 )
 
 var (
-	infraCrdFilename           = filepath.Join(manifestDir, "cluster-infrastructure-01-crd.yaml")
 	infraCfgFilename           = filepath.Join(manifestDir, "cluster-infrastructure-02-config.yml")
 	cloudControllerUIDFilename = filepath.Join(manifestDir, "cloud-controller-uid-config.yml")
 )
@@ -78,17 +76,46 @@ func (i *Infrastructure) Generate(dependencies asset.Parents) error {
 			InfrastructureName:   clusterID.InfraID,
 			APIServerURL:         getAPIServerURL(installConfig.Config),
 			APIServerInternalURL: getInternalAPIServerURL(installConfig.Config),
-			EtcdDiscoveryDomain:  getEtcdDiscoveryDomain(installConfig.Config),
 			PlatformStatus:       &configv1.PlatformStatus{},
 		},
+	}
+
+	if installConfig.Config.ControlPlane.Replicas != nil && *installConfig.Config.ControlPlane.Replicas < 3 {
+		config.Status.ControlPlaneTopology = configv1.SingleReplicaTopologyMode
+	} else {
+		config.Status.ControlPlaneTopology = configv1.HighlyAvailableTopologyMode
+	}
+
+	numOfWorkers := int64(0)
+	for _, mp := range installConfig.Config.Compute {
+		if mp.Replicas != nil {
+			numOfWorkers += *mp.Replicas
+		}
+	}
+	switch numOfWorkers {
+	case 0:
+		config.Status.InfrastructureTopology = config.Status.ControlPlaneTopology
+	case 1:
+		config.Status.InfrastructureTopology = configv1.SingleReplicaTopologyMode
+	default:
+		config.Status.InfrastructureTopology = configv1.HighlyAvailableTopologyMode
 	}
 
 	switch installConfig.Config.Platform.Name() {
 	case aws.Name:
 		config.Spec.PlatformSpec.Type = configv1.AWSPlatformType
 		config.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
+
+		var resourceTags []configv1.AWSResourceTag
+		if installConfig.Config.AWS.ExperimentalPropagateUserTag {
+			resourceTags = make([]configv1.AWSResourceTag, 0, len(installConfig.Config.AWS.UserTags))
+			for k, v := range installConfig.Config.AWS.UserTags {
+				resourceTags = append(resourceTags, configv1.AWSResourceTag{Key: k, Value: v})
+			}
+		}
 		config.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
-			Region: installConfig.Config.Platform.AWS.Region,
+			Region:       installConfig.Config.Platform.AWS.Region,
+			ResourceTags: resourceTags,
 		}
 
 		for _, service := range installConfig.Config.Platform.AWS.ServiceEndpoints {
@@ -108,13 +135,17 @@ func (i *Infrastructure) Generate(dependencies asset.Parents) error {
 	case azure.Name:
 		config.Spec.PlatformSpec.Type = configv1.AzurePlatformType
 
-		rg := fmt.Sprintf("%s-rg", clusterID.InfraID)
+		rg := installConfig.Config.Azure.ClusterResourceGroupName(clusterID.InfraID)
 		config.Status.PlatformStatus.Azure = &configv1.AzurePlatformStatus{
 			ResourceGroupName:        rg,
 			NetworkResourceGroupName: rg,
+			CloudName:                configv1.AzureCloudEnvironment(installConfig.Config.Platform.Azure.CloudName),
 		}
 		if nrg := installConfig.Config.Platform.Azure.NetworkResourceGroupName; nrg != "" {
 			config.Status.PlatformStatus.Azure.NetworkResourceGroupName = nrg
+		}
+		if installConfig.Config.Platform.Azure.CloudName == azure.StackCloud {
+			config.Status.PlatformStatus.Azure.ARMEndpoint = installConfig.Config.Platform.Azure.ARMEndpoint
 		}
 	case baremetal.Name:
 		config.Spec.PlatformSpec.Type = configv1.BareMetalPlatformType
@@ -143,13 +174,8 @@ func (i *Infrastructure) Generate(dependencies asset.Parents) error {
 		config.Spec.PlatformSpec.Type = configv1.NonePlatformType
 	case openstack.Name:
 		config.Spec.PlatformSpec.Type = configv1.OpenStackPlatformType
-		dnsVIP, err := openstackdefaults.DNSVIP(installConfig.Config.Networking)
-		if err != nil {
-			return err
-		}
 		config.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			APIServerInternalIP: installConfig.Config.OpenStack.APIVIP,
-			NodeDNSIP:           dnsVIP.String(),
 			IngressIP:           installConfig.Config.OpenStack.IngressVIP,
 		}
 	case vsphere.Name:
@@ -164,8 +190,13 @@ func (i *Infrastructure) Generate(dependencies asset.Parents) error {
 		config.Spec.PlatformSpec.Type = configv1.OvirtPlatformType
 		config.Status.PlatformStatus.Ovirt = &configv1.OvirtPlatformStatus{
 			APIServerInternalIP: installConfig.Config.Ovirt.APIVIP,
-			NodeDNSIP:           installConfig.Config.Ovirt.DNSVIP,
 			IngressIP:           installConfig.Config.Ovirt.IngressVIP,
+		}
+	case kubevirt.Name:
+		config.Spec.PlatformSpec.Type = configv1.KubevirtPlatformType
+		config.Status.PlatformStatus.Kubevirt = &configv1.KubevirtPlatformStatus{
+			APIServerInternalIP: installConfig.Config.Kubevirt.APIVIP,
+			IngressIP:           installConfig.Config.Kubevirt.IngressVIP,
 		}
 	default:
 		config.Spec.PlatformSpec.Type = configv1.NonePlatformType

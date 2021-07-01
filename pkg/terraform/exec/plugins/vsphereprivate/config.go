@@ -6,7 +6,7 @@ import (
 	"net/url"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/session/cache"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -50,9 +50,6 @@ func (cw *ConfigWrapper) vimURL() (*url.URL, error) {
 // restURL returns a URL to pass to the REST client.
 func (cw *ConfigWrapper) restURL() (*cache.Session, error) {
 	u, err := url.Parse("https://" + cw.config.VSphereServer)
-	if err != nil {
-		return nil, err
-	}
 	if err != nil {
 		return nil, err
 	}

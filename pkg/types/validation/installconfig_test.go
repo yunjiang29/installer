@@ -5,7 +5,6 @@ import (
 	"net"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,13 +13,12 @@ import (
 	"github.com/openshift/installer/pkg/ipnet"
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/aws"
-	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/baremetal"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	"github.com/openshift/installer/pkg/types/none"
 	"github.com/openshift/installer/pkg/types/openstack"
-	"github.com/openshift/installer/pkg/types/openstack/validation/mock"
 	"github.com/openshift/installer/pkg/types/ovirt"
 	"github.com/openshift/installer/pkg/types/vsphere"
 )
@@ -45,7 +43,7 @@ func validInstallConfig() *types.InstallConfig {
 		Proxy: &types.Proxy{
 			HTTPProxy:  "http://user:password@127.0.0.1:8080",
 			HTTPSProxy: "https://user:password@127.0.0.1:8080",
-			NoProxy:    "valid-proxy.com, 172.30.0.0/16",
+			NoProxy:    "valid-proxy.com,172.30.0.0/16",
 		},
 	}
 }
@@ -56,17 +54,17 @@ func validAWSPlatform() *aws.Platform {
 	}
 }
 
-func validAzurePlatform() *azure.Platform {
-	return &azure.Platform{
-		Region:                      "us-east-1",
-		BaseDomainResourceGroupName: "my-resource-group",
-	}
-}
-
 func validGCPPlatform() *gcp.Platform {
 	return &gcp.Platform{
 		ProjectID: "myProject",
 		Region:    "us-east1",
+	}
+}
+
+func validIBMCloudPlatform() *ibmcloud.Platform {
+	return &ibmcloud.Platform{
+		Region:         "us-south",
+		ClusterOSImage: "custom-rhcos-image",
 	}
 }
 
@@ -97,6 +95,7 @@ func validBareMetalPlatform() *baremetal.Platform {
 		ProvisioningNetworkCIDR:      ipnet.MustParseCIDR("192.168.111.0/24"),
 		BootstrapProvisioningIP:      "192.168.111.1",
 		ClusterProvisioningIP:        "192.168.111.2",
+		ProvisioningNetwork:          baremetal.ManagedProvisioningNetwork,
 		Hosts: []*baremetal.Host{
 			{
 				Name:           "host1",
@@ -129,7 +128,9 @@ func validOpenStackPlatform() *openstack.Platform {
 	return &openstack.Platform{
 		Cloud:           "test-cloud",
 		ExternalNetwork: "test-network",
-		FlavorName:      "test-flavor",
+		DefaultMachinePlatform: &openstack.MachinePool{
+			FlavorName: "test-flavor",
+		},
 	}
 }
 
@@ -206,7 +207,6 @@ func validOvirtPlatform() *ovirt.Platform {
 		ClusterID:       uuid.NewRandom().String(),
 		StorageDomainID: uuid.NewRandom().String(),
 		APIVIP:          "1.1.1.1",
-		DNSVIP:          "1.1.1.2",
 		IngressVIP:      "1.1.1.3",
 	}
 }
@@ -237,7 +237,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.ObjectMeta.Name = "bad-name-"
 				return c
 			}(),
-			expectedError: `^metadata.name: Invalid value: "bad-name-": a DNS-1123 subdomain must consist of lower case alphanumeric characters, '-' or '\.', and must start and end with an alphanumeric character \(e\.g\. 'example\.com', regex used for validation is '\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\(\\\.\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\)\*'\)$`,
+			expectedError: `^metadata.name: Invalid value: "bad-name-": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '\.', and must start and end with an alphanumeric character \(e\.g\. 'example\.com', regex used for validation is '\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\(\\\.\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\)\*'\)$`,
 		},
 		{
 			name: "invalid ssh key",
@@ -255,7 +255,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.BaseDomain = ".bad-domain."
 				return c
 			}(),
-			expectedError: `^baseDomain: Invalid value: "\.bad-domain\.": a DNS-1123 subdomain must consist of lower case alphanumeric characters, '-' or '\.', and must start and end with an alphanumeric character \(e\.g\. 'example\.com', regex used for validation is '\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\(\\\.\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\)\*'\)$`,
+			expectedError: `^baseDomain: Invalid value: "\.bad-domain\.": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '\.', and must start and end with an alphanumeric character \(e\.g\. 'example\.com', regex used for validation is '\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\(\\\.\[a-z0-9]\(\[-a-z0-9]\*\[a-z0-9]\)\?\)\*'\)$`,
 		},
 		{
 			name: "overly long cluster domain",
@@ -408,6 +408,27 @@ func TestValidateInstallConfig(t *testing.T) {
 			expectedError: `^networking\.clusterNetwork\[0]\.hostPrefix: Invalid value: 23: cluster network host subnetwork prefix must not be larger size than CIDR 192.168.1.0/24$`,
 		},
 		{
+			name: "cluster network host prefix unset",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Networking.NetworkType = "OpenShiftSDN"
+				c.Networking.ClusterNetwork[0].CIDR = *ipnet.MustParseCIDR("192.168.1.0/24")
+				c.Networking.ClusterNetwork[0].HostPrefix = 0
+				return c
+			}(),
+			expectedError: `^networking\.clusterNetwork\[0]\.hostPrefix: Invalid value: 0: cluster network host subnetwork prefix must not be larger size than CIDR 192.168.1.0/24$`,
+		},
+		{
+			name: "cluster network host prefix unset ignored",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Networking.NetworkType = "HostPrefixNotRequiredPlugin"
+				c.Networking.ClusterNetwork[0].CIDR = *ipnet.MustParseCIDR("192.168.1.0/24")
+				return c
+			}(),
+			expectedError: ``,
+		},
+		{
 			name: "missing control plane",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
@@ -477,30 +498,13 @@ func TestValidateInstallConfig(t *testing.T) {
 			}(),
 		},
 		{
-			name: "invalid compute",
-			installConfig: func() *types.InstallConfig {
-				c := validInstallConfig()
-				c.Compute = []types.MachinePool{
-					func() types.MachinePool {
-						p := *validMachinePool("worker")
-						p.Platform = types.MachinePoolPlatform{
-							OpenStack: &openstack.MachinePool{},
-						}
-						return p
-					}(),
-				}
-				return c
-			}(),
-			expectedError: `^compute\[0\]\.platform\.openstack: Invalid value: openstack\.MachinePool{.*}: cannot specify "openstack" for machine pool when cluster is using "aws"$`,
-		},
-		{
 			name: "missing platform",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
 				c.Platform = types.Platform{}
 				return c
 			}(),
-			expectedError: `^platform: Invalid value: "": must specify one of the platforms \(aws, azure, baremetal, gcp, none, openstack, ovirt, vsphere\)$`,
+			expectedError: `^platform: Invalid value: "": must specify one of the platforms \(aws, azure, baremetal, gcp, ibmcloud, kubevirt, none, openstack, ovirt, vsphere\)$`,
 		},
 		{
 			name: "multiple platforms",
@@ -531,7 +535,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				}
 				return c
 			}(),
-			expectedError: `^platform: Invalid value: "libvirt": must specify one of the platforms \(aws, azure, baremetal, gcp, none, openstack, ovirt, vsphere\)$`,
+			expectedError: `^platform: Invalid value: "libvirt": must specify one of the platforms \(aws, azure, baremetal, gcp, ibmcloud, kubevirt, none, openstack, ovirt, vsphere\)$`,
 		},
 		{
 			name: "invalid libvirt platform",
@@ -543,7 +547,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform.Libvirt.URI = ""
 				return c
 			}(),
-			expectedError: `^\[platform: Invalid value: "libvirt": must specify one of the platforms \(aws, azure, baremetal, gcp, none, openstack, ovirt, vsphere\), platform\.libvirt\.uri: Invalid value: "": invalid URI "" \(no scheme\)]$`,
+			expectedError: `^\[platform: Invalid value: "libvirt": must specify one of the platforms \(aws, azure, baremetal, gcp, ibmcloud, kubevirt, none, openstack, ovirt, vsphere\), platform\.libvirt\.uri: Invalid value: "": invalid URI "" \(no scheme\)]$`,
 		},
 		{
 			name: "valid none platform",
@@ -572,10 +576,10 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform = types.Platform{
 					OpenStack: validOpenStackPlatform(),
 				}
-				c.Platform.OpenStack.Cloud = ""
+				c.Platform.OpenStack.APIVIP = "123.456.789.000"
 				return c
 			}(),
-			expectedError: `^platform\.openstack\.cloud: Unsupported value: "": supported values: "test-cloud"$`,
+			expectedError: `^platform\.openstack\.apiVIP: Invalid value: "123.456.789.000": "123.456.789.000" is not a valid IP$`,
 		},
 		{
 			name: "valid baremetal platform",
@@ -597,7 +601,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform.BareMetal.APIVIP = ""
 				return c
 			}(),
-			expectedError: `^\[platform\.baremetal\.apiVIP: Invalid value: "": "" is not a valid IP, platform\.baremetal\.apiVIP: Invalid value: "": the virtual IP is expected to be in one of the machine networks]$`,
+			expectedError: `^\[platform\.baremetal\.apiVIP: Invalid value: "": "" is not a valid IP, platform\.baremetal\.apiVIP: Invalid value: "": IP expected to be in one of the machine networks: 10.0.0.0/16]$`,
 		},
 		{
 			name: "baremetal API VIP not an IP",
@@ -609,7 +613,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform.BareMetal.APIVIP = "test"
 				return c
 			}(),
-			expectedError: `^\[platform\.baremetal\.apiVIP: Invalid value: "test": "test" is not a valid IP, platform\.baremetal\.apiVIP: Invalid value: "test": the virtual IP is expected to be in one of the machine networks]$`,
+			expectedError: `^\[platform\.baremetal\.apiVIP: Invalid value: "test": "test" is not a valid IP, platform\.baremetal\.apiVIP: Invalid value: "test": IP expected to be in one of the machine networks: 10.0.0.0/16]$`,
 		},
 		{
 			name: "baremetal API VIP set to an incorrect value",
@@ -621,7 +625,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform.BareMetal.APIVIP = "10.1.0.5"
 				return c
 			}(),
-			expectedError: `^platform\.baremetal\.apiVIP: Invalid value: "10\.1\.0\.5": the virtual IP is expected to be in one of the machine networks$`,
+			expectedError: `^platform\.baremetal\.apiVIP: Invalid value: "10\.1\.0\.5": IP expected to be in one of the machine networks: 10.0.0.0/16$`,
 		},
 		{
 			name: "baremetal Ingress VIP not an IP",
@@ -633,7 +637,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform.BareMetal.IngressVIP = "test"
 				return c
 			}(),
-			expectedError: `^\[platform\.baremetal\.ingressVIP: Invalid value: "test": "test" is not a valid IP, platform\.baremetal\.ingressVIP: Invalid value: "test": the virtual IP is expected to be in one of the machine networks]$`,
+			expectedError: `^\[platform\.baremetal\.ingressVIP: Invalid value: "test": "test" is not a valid IP, platform\.baremetal\.ingressVIP: Invalid value: "test": IP expected to be in one of the machine networks: 10.0.0.0/16]$`,
 		},
 		{
 			name: "baremetal Ingress VIP set to an incorrect value",
@@ -645,7 +649,7 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Platform.BareMetal.IngressVIP = "10.1.0.7"
 				return c
 			}(),
-			expectedError: `^platform\.baremetal\.ingressVIP: Invalid value: "10\.1\.0\.7": the virtual IP is expected to be in one of the machine networks$`,
+			expectedError: `^platform\.baremetal\.ingressVIP: Invalid value: "10\.1\.0\.7": IP expected to be in one of the machine networks: 10.0.0.0/16$`,
 		}, {
 			name: "valid vsphere platform",
 			installConfig: func() *types.InstallConfig {
@@ -698,7 +702,194 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Proxy.HTTPProxy = "http://bad%20uri"
 				return c
 			}(),
-			expectedError: `^\QHTTPProxy: Invalid value: "http://bad%20uri": parse http://bad%20uri: invalid URL escape "%20"\E$`,
+			expectedError: `^proxy.httpProxy: Invalid value: "http://bad%20uri": parse "http://bad%20uri": invalid URL escape "%20"$`,
+		},
+		{
+			name: "invalid HTTPProxy Schema missing",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http//baduri"
+				return c
+			}(),
+			expectedError: `^proxy.httpProxy: Invalid value: "http//baduri": parse "http//baduri": invalid URI for request$`,
+		},
+		{
+			name: "HTTPProxy with port overlapping with Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://192.168.1.25:3030"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpProxy: Invalid value: "http://192.168.1.25:3030": proxy value is part of the cluster networks$`,
+		},
+		{
+			name: "overlapping HTTPProxy and Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://192.168.1.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpProxy: Invalid value: "http://192.168.1.25": proxy value is part of the cluster networks$`,
+		},
+		{
+			name: "non-overlapping HTTPProxy and Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://192.169.1.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+		},
+		{
+			name: "overlapping HTTPProxy and more than one Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://192.168.1.25"
+				c.Networking = validIPv4NetworkingConfig()
+				c.ClusterNetwork = append(c.ClusterNetwork, []types.ClusterNetworkEntry{
+					{
+						CIDR:       *ipnet.MustParseCIDR("192.168.0.0/16"),
+						HostPrefix: 28,
+					},
+				}...,
+				)
+				return c
+			}(),
+			expectedError: `^\Q[networking.clusterNetwork[1].cidr: Invalid value: "192.168.0.0/16": cluster network must not overlap with cluster network 0, proxy.httpProxy: Invalid value: "http://192.168.1.25": proxy value is part of the cluster networks]\E$`,
+		},
+		{
+			name: "non-overlapping HTTPProxy and Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://172.31.0.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+		},
+		{
+			name: "HTTPProxy with port overlapping with Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://172.30.0.25:3030"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpProxy: Invalid value: "http://172.30.0.25:3030": proxy value is part of the service networks$`,
+		},
+		{
+			name: "overlapping HTTPProxy and Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://172.30.0.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpProxy: Invalid value: "http://172.30.0.25": proxy value is part of the service networks$`,
+		},
+		{
+			name: "overlapping HTTPProxy and more than one Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "http://172.30.0.25"
+				c.Networking = validIPv4NetworkingConfig()
+				c.ServiceNetwork = append(c.ServiceNetwork, []ipnet.IPNet{
+					*ipnet.MustParseCIDR("172.30.1.0/24"),
+				}...,
+				)
+				return c
+			}(),
+			expectedError: `^\Q[networking.serviceNetwork[1]: Invalid value: "172.30.1.0/24": service network must not overlap with service network 0, networking.serviceNetwork: Invalid value: "172.30.0.0/16, 172.30.1.0/24": only one service network can be specified, proxy.httpProxy: Invalid value: "http://172.30.0.25": proxy value is part of the service networks]\E$`,
+		},
+		{
+			name: "non-overlapping HTTPSProxy and Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://192.168.2.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+		},
+		{
+			name: "HTTPSProxy with port overlapping with Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://192.168.1.25:3030"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpsProxy: Invalid value: "http://192.168.1.25:3030": proxy value is part of the cluster networks$`,
+		},
+		{
+			name: "overlapping HTTPSProxy and Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://192.168.1.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpsProxy: Invalid value: "http://192.168.1.25": proxy value is part of the cluster networks$`,
+		},
+		{
+			name: "overlapping HTTPSProxy and more than one Cluster Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://192.168.1.25"
+				c.Networking = validIPv4NetworkingConfig()
+				c.ClusterNetwork = append(c.ClusterNetwork, []types.ClusterNetworkEntry{
+					{
+						CIDR:       *ipnet.MustParseCIDR("192.168.0.0/16"),
+						HostPrefix: 28,
+					},
+				}...,
+				)
+				return c
+			}(),
+			expectedError: `^\Q[networking.clusterNetwork[1].cidr: Invalid value: "192.168.0.0/16": cluster network must not overlap with cluster network 0, proxy.httpsProxy: Invalid value: "http://192.168.1.25": proxy value is part of the cluster networks]\E$`,
+		},
+		{
+			name: "overlapping HTTPSProxy and Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://172.30.0.25"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpsProxy: Invalid value: "http://172.30.0.25": proxy value is part of the service networks$`,
+		},
+		{
+			name: "HTTPSProxy with port overlapping with Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://172.30.0.25:3030"
+				c.Networking = validIPv4NetworkingConfig()
+				return c
+			}(),
+			expectedError: `^proxy.httpsProxy: Invalid value: "http://172.30.0.25:3030": proxy value is part of the service networks$`,
+		},
+		{
+			name: "overlapping HTTPSProxy and more than one Service Networks",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http://172.30.0.25"
+				c.Networking = validIPv4NetworkingConfig()
+				c.ServiceNetwork = append(c.ServiceNetwork, []ipnet.IPNet{
+					*ipnet.MustParseCIDR("172.30.1.0/24"),
+				}...,
+				)
+				return c
+			}(),
+			expectedError: `^\Q[networking.serviceNetwork[1]: Invalid value: "172.30.1.0/24": service network must not overlap with service network 0, networking.serviceNetwork: Invalid value: "172.30.0.0/16, 172.30.1.0/24": only one service network can be specified, proxy.httpsProxy: Invalid value: "http://172.30.0.25": proxy value is part of the service networks]\E$`,
+		},
+		{
+			name: "invalid HTTPProxy Schema different schema",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPProxy = "ftp://baduri"
+				return c
+			}(),
+			expectedError: `^proxy.httpProxy: Unsupported value: "ftp": supported values: "http"$`,
 		},
 		{
 			name: "invalid HTTPSProxy",
@@ -707,34 +898,69 @@ func TestValidateInstallConfig(t *testing.T) {
 				c.Proxy.HTTPSProxy = "https://bad%20uri"
 				return c
 			}(),
-			expectedError: `^\QHTTPSProxy: Invalid value: "https://bad%20uri": parse https://bad%20uri: invalid URL escape "%20"\E$`,
+			expectedError: `^proxy.httpsProxy: Invalid value: "https://bad%20uri": parse "https://bad%20uri": invalid URL escape "%20"$`,
+		},
+		{
+			name: "invalid HTTPSProxy Schema missing",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "http//baduri"
+				return c
+			}(),
+			expectedError: `^proxy.httpsProxy: Invalid value: "http//baduri": parse "http//baduri": invalid URI for request$`,
+		},
+		{
+			name: "invalid HTTPSProxy Schema different schema",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.HTTPSProxy = "ftp://baduri"
+				return c
+			}(),
+			expectedError: `^proxy.httpsProxy: Unsupported value: "ftp": supported values: "http", "https"$`,
 		},
 		{
 			name: "invalid NoProxy domain",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
+				c.Proxy.NoProxy = "good-no-proxy.com,*.bad-proxy"
+				return c
+			}(),
+			expectedError: `^\Qproxy.noProxy: Invalid value: "good-no-proxy.com,*.bad-proxy": each element of noProxy must be a CIDR or domain without wildcard characters, which is violated by element 1 "*.bad-proxy"\E$`,
+		},
+		{
+			name: "invalid NoProxy spaces",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
 				c.Proxy.NoProxy = "good-no-proxy.com, *.bad-proxy"
 				return c
 			}(),
-			expectedError: `^\QNoProxy: Invalid value: "*.bad-proxy": must be a CIDR or domain, without wildcard characters\E$`,
+			expectedError: `^\Q[proxy.noProxy: Invalid value: "good-no-proxy.com, *.bad-proxy": noProxy must not have spaces, proxy.noProxy: Invalid value: "good-no-proxy.com, *.bad-proxy": each element of noProxy must be a CIDR or domain without wildcard characters, which is violated by element 1 "*.bad-proxy"]\E$`,
 		},
 		{
 			name: "invalid NoProxy CIDR",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
-				c.Proxy.NoProxy = "good-no-proxy.com, 172.bad.CIDR.0/16"
+				c.Proxy.NoProxy = "good-no-proxy.com,172.bad.CIDR.0/16"
 				return c
 			}(),
-			expectedError: `^\QNoProxy: Invalid value: "172.bad.CIDR.0/16": must be a CIDR or domain, without wildcard characters\E$`,
+			expectedError: `^\Qproxy.noProxy: Invalid value: "good-no-proxy.com,172.bad.CIDR.0/16": each element of noProxy must be a CIDR or domain without wildcard characters, which is violated by element 1 "172.bad.CIDR.0/16"\E$`,
 		},
 		{
 			name: "invalid NoProxy domain & CIDR",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
-				c.Proxy.NoProxy = "good-no-proxy.com, a-good-one, *.bad-proxy., another,   172.bad.CIDR.0/16, good-end"
+				c.Proxy.NoProxy = "good-no-proxy.com,a-good-one,*.bad-proxy.,another,172.bad.CIDR.0/16,good-end"
 				return c
 			}(),
-			expectedError: `^\Q[NoProxy: Invalid value: "*.bad-proxy.": must be a CIDR or domain, without wildcard characters, NoProxy: Invalid value: "172.bad.CIDR.0/16": must be a CIDR or domain, without wildcard characters]\E$`,
+			expectedError: `^\Q[proxy.noProxy: Invalid value: "good-no-proxy.com,a-good-one,*.bad-proxy.,another,172.bad.CIDR.0/16,good-end": each element of noProxy must be a CIDR or domain without wildcard characters, which is violated by element 2 "*.bad-proxy.", proxy.noProxy: Invalid value: "good-no-proxy.com,a-good-one,*.bad-proxy.,another,172.bad.CIDR.0/16,good-end": each element of noProxy must be a CIDR or domain without wildcard characters, which is violated by element 4 "172.bad.CIDR.0/16"]\E$`,
+		},
+		{
+			name: "valid * NoProxy",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Proxy.NoProxy = "*"
+				return c
+			}(),
 		},
 		{
 			name: "valid GCP platform",
@@ -757,6 +983,27 @@ func TestValidateInstallConfig(t *testing.T) {
 				return c
 			}(),
 			expectedError: `^metadata\.name: Invalid value: "1-invalid-cluster": cluster name must begin with a lower-case letter$`,
+		},
+		{
+			name: "valid ibmcloud platform",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{
+					IBMCloud: validIBMCloudPlatform(),
+				}
+				return c
+			}(),
+		},
+		{
+			name: "invalid ibmcloud platform",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{
+					IBMCloud: &ibmcloud.Platform{},
+				}
+				return c
+			}(),
+			expectedError: `^\Q[platform.ibmcloud.region: Required value: region must be specified, platform.ibmcloud.clusterOSImage: Required value: clusterOSImage must be specified]\E$`,
 		},
 		{
 			name: "release image source is not canonical",
@@ -904,6 +1151,17 @@ func TestValidateInstallConfig(t *testing.T) {
 			}(),
 			expectedError: `Invalid value: "DualStack": dual-stack IPv4/IPv6 is not supported for this platform, specify only one type of address`,
 		},
+		{
+			name: "invalid IPv6 hostprefix",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{None: &none.Platform{}}
+				c.Networking = validIPv6NetworkingConfig()
+				c.Networking.ClusterNetwork[0].HostPrefix = 72
+				return c
+			}(),
+			expectedError: `Invalid value: 72: cluster network host subnetwork prefix must be 64 for IPv6 networks`,
+		},
 
 		{
 			name: "valid ovirt platform",
@@ -916,37 +1174,103 @@ func TestValidateInstallConfig(t *testing.T) {
 			}(),
 		},
 		{
-			name: "cluster is not heteregenous",
+			name: "architecture is not supported",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
 				c.Compute[0].Architecture = types.ArchitectureS390X
+				c.ControlPlane.Architecture = types.ArchitectureS390X
 				return c
 			}(),
-			expectedError: `^compute\[0\].architecture: Invalid value: "s390x": heteregeneous multi-arch is not supported; compute pool architecture must match control plane$`,
+			expectedError: `[controlPlane.architecture: Unsupported value: "s390x": supported values: "amd64", "arm64", compute\[0\].architecture: Unsupported value: "s390x": supported values: "amd64", "arm64"]`,
+		},
+		{
+			name: "architecture is not supported",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Compute[0].Architecture = types.ArchitecturePPC64LE
+				c.ControlPlane.Architecture = types.ArchitecturePPC64LE
+				return c
+			}(),
+			expectedError: `[controlPlane.architecture: Unsupported value: "ppc64le": supported values: "amd64", "arm64", compute\[0\].architecture: Unsupported value: "ppc64le": supported values: "amd64", "arm64"]`,
 		},
 		{
 			name: "cluster is not heteregenous",
 			installConfig: func() *types.InstallConfig {
 				c := validInstallConfig()
-				c.Compute[0].Architecture = types.ArchitecturePPC64LE
+				c.Compute[0].Architecture = types.ArchitectureARM64
 				return c
 			}(),
-			expectedError: `^compute\[0\].architecture: Invalid value: "ppc64le": heteregeneous multi-arch is not supported; compute pool architecture must match control plane$`,
+			expectedError: `^compute\[0\].architecture: Invalid value: "arm64": heteregeneous multi-arch is not supported; compute pool architecture must match control plane$`,
+		},
+		{
+			name: "valid cloud credentials mode",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.CredentialsMode = types.PassthroughCredentialsMode
+				return c
+			}(),
+		},
+		{
+			name: "invalidly set cloud credentials mode",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{BareMetal: validBareMetalPlatform()}
+				c.CredentialsMode = types.PassthroughCredentialsMode
+				return c
+			}(),
+			expectedError: `^credentialsMode: Invalid value: "Passthrough": cannot be set when using the "baremetal" platform$`,
+		},
+		{
+			name: "bad cloud credentials mode",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.CredentialsMode = "bad-mode"
+				return c
+			}(),
+			expectedError: `^credentialsMode: Unsupported value: "bad-mode": supported values: "Manual", "Mint", "Passthrough"$`,
+		},
+		{
+			name: "allowed docker bridge with non-libvirt",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Networking.MachineNetwork = []types.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.17.64.0/18")}}
+				return c
+			}(),
+			expectedError: ``,
+		},
+		{
+			name: "docker bridge not allowed with libvirt",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{Libvirt: validLibvirtPlatform()}
+				c.Networking.MachineNetwork = []types.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.17.64.0/18")}}
+				return c
+			}(),
+			expectedError: `\Q[networking.machineNewtork[0]: Invalid value: "172.17.64.0/18": overlaps with default Docker Bridge subnet, platform: Invalid value: "libvirt": must specify one of the platforms (\E.*\Q)]\E`,
+		},
+		{
+			name: "publish internal for non-cloud platform",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{VSphere: validVSpherePlatform()}
+				c.Publish = types.InternalPublishingStrategy
+				return c
+			}(),
+			expectedError: `publish: Invalid value: "Internal": Internal publish strategy is not supported on "vsphere" platform`,
+		},
+		{
+			name: "publish internal for cloud platform",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.Platform = types.Platform{GCP: validGCPPlatform()}
+				c.Publish = types.InternalPublishingStrategy
+				return c
+			}(),
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			fetcher := mock.NewMockValidValuesFetcher(mockCtrl)
-			fetcher.EXPECT().GetCloudNames().Return([]string{"test-cloud"}, nil).AnyTimes()
-			fetcher.EXPECT().GetNetworkNames(gomock.Any()).Return([]string{"test-network"}, nil).AnyTimes()
-			fetcher.EXPECT().GetFlavorNames(gomock.Any()).Return([]string{"test-flavor"}, nil).AnyTimes()
-			fetcher.EXPECT().GetNetworkExtensionsAliases(gomock.Any()).Return([]string{"trunk"}, nil).AnyTimes()
-			fetcher.EXPECT().GetServiceCatalog(gomock.Any()).Return([]string{"octavia"}, nil).AnyTimes()
-
-			err := ValidateInstallConfig(tc.installConfig, fetcher).ToAggregate()
+			err := ValidateInstallConfig(tc.installConfig).ToAggregate()
 			if tc.expectedError == "" {
 				assert.NoError(t, err)
 			} else {

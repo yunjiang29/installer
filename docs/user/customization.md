@@ -39,7 +39,7 @@ The following `install-config.yaml` properties are available:
         The default is 10.128.0.0/14 with a host prefix of /23.
         * `cidr` (required [IP network](#ip-networks)): The IP block address pool.
         * `hostPrefix` (required integer): The prefix size to allocate to each node from the CIDR.
-        For example, 24 would allocate 2^8=256 adresses to each node.
+        For example, 24 would allocate 2^8=256 adresses to each node. If this field is not used by the plugin, it can be left unset.
     * `machineNetwork` (optional array of objects): The IP address pools for machines.
         * `cidr` (required [IP network](#ip-networks)): The IP block address pool.
             The default is 10.0.0.0/16 for all platforms other than libvirt.
@@ -53,6 +53,7 @@ The following `install-config.yaml` properties are available:
     * `baremetal` (optional object): [Baremetal IPI-specific properties](metal/customization_ipi.md).
     * `azure` (optional object): [Azure-specific properties](azure/customization.md#cluster-scoped-properties).
     * `openstack` (optional object): [OpenStack-specific properties](openstack/customization.md#cluster-scoped-properties).
+    * `ovirt` (optional object): [oVirt-specific properties](ovirt/customization.md#cluster-scoped-properties).
     * `vsphere` (optional object): [vSphere-specific properties](vsphere/customization.md#cluster-scoped-properties).
 * `proxy` (optional object): The proxy settings for the cluster.
     If unset, the cluster will not be configured to use a proxy.
@@ -81,6 +82,7 @@ The following machine-pool properties are available:
     * `azure` (optional object): [Azure-specific properties](azure/customization.md#machine-pools).
     * `gcp` (optional object): [GCP-specific properties](gcp/customization.md#machine-pools).
     * `openstack` (optional object): [OpenStack-specific properties](openstack/customization.md#machine-pools).
+    * `ovirt` (optional object): [oVirt-specific properties](ovirt/customization.md#machine-pools).
     * `vsphere` (optional object): [vSphere-specific properties](vsphere/customization.md#machine-pools).
 * `replicas` (optional integer): The machine count for the machine pool.
 
@@ -233,11 +235,12 @@ The `manifest-templates` target will output the unrendered manifest templates in
 **IMPORTANT**:
 
 - These customizations require using the `manifests` target that does not provide compatibility guarantees.
-- This can affect upgradability of your cluster as the `machine-config-operator` can mark clusters tainted when user defined [MachineConfig][machine-config] objects are present in the cluster.
 
 In most cases, user applications should be run on the cluster via Kubernetes workload objects (e.g. DaemonSet, Deployment, etc). For example, DaemonSets are the most stable way to run a logging agent on all hosts. However, there may be some cases where these workloads need to be executed prior to the node joining the Kubernetes cluster. For example, a compliance mandate like "the user must run auditing tools as soon as the operating system comes up" might require a custom systemd unit for an auditing container in the Ignition config for some or all nodes.
 
-The configuration of machines in OpenShift is controlled using `MachineConfig` objects and what configuration is applied to a machine in the OpenShift cluster is based on the [MachineConfigPool][machine-config-pool] objects. To allow customization of machine configuration which is not possible as Day 2 operation, the installer allows users to bring their own custom `MachineConfig` objects.
+Further, some aspects of RHEL CoreOS machines (usually kernel arguments such as `nosmt` for disabling hyperthreading) may need to be configured before user workloads land on a system.
+
+The configuration of machines in OpenShift is controlled using `MachineConfig` objects and what configuration is applied to a machine in the OpenShift cluster is based on the [MachineConfigPool][machine-config-pool] objects.  For these "day 1" cases, `MachineConfig` objects can be provided as additional manifests.
 
 1. `openshift-install --dir $INSTALL_DIR create manifests`
 
@@ -274,13 +277,8 @@ For example:
     -rw-r--r--. 1 xxxxx xxxxx  557 Feb 28 10:54 cluster-network-01-crd.yml
     -rw-r--r--. 1 xxxxx xxxxx  327 Feb 28 10:54 cluster-network-02-config.yml
     -rw-r--r--. 1 xxxxx xxxxx  264 Feb 28 10:54 cvo-overrides.yaml
-    -rw-r--r--. 1 xxxxx xxxxx  275 Feb 28 10:54 etcd-service.yaml
-    -rw-r--r--. 1 xxxxx xxxxx  283 Feb 28 10:54 host-etcd-service-endpoints.yaml
-    -rw-r--r--. 1 xxxxx xxxxx  268 Feb 28 10:54 host-etcd-service.yaml
     -rw-r--r--. 1 xxxxx xxxxx  118 Feb 28 10:54 kube-cloud-config.yaml
-    -rw-r--r--. 1 xxxxx xxxxx 1299 Feb 28 10:54 kube-system-configmap-etcd-serving-ca.yaml
     -rw-r--r--. 1 xxxxx xxxxx 1304 Feb 28 10:54 kube-system-configmap-root-ca.yaml
-    -rw-r--r--. 1 xxxxx xxxxx 3877 Feb 28 10:54 kube-system-secret-etcd-client.yaml
     -rw-r--r--. 1 xxxxx xxxxx 4030 Feb 28 10:54 machine-config-server-tls-secret.yaml
     -rw-r--r--. 1 xxxxx xxxxx  856 Feb 28 10:54 pull.json
 
@@ -308,7 +306,7 @@ For example:
     spec:
       config:
         ignition:
-          version: 2.2.0
+          version: 3.1.0
         systemd:
           units:
           - contents: |
@@ -376,19 +374,19 @@ For example:
     ```console
     oc --kubeconfig no-taint-cluster/auth/kubeconfig get machineconfigs
     NAME                                                        GENERATEDBYCONTROLLER        IGNITIONVERSION   CREATED
-    00-master                                                   3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
+    00-master                                                   3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
     00-master-ssh                                               3.11.0-744-g5b05d9d3-dirty                     137m
-    00-worker                                                   3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
+    00-worker                                                   3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
     00-worker-ssh                                               3.11.0-744-g5b05d9d3-dirty                     137m
-    01-master-container-runtime                                 3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
-    01-master-kubelet                                           3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
-    02-master-kubelet                                                                        2.2.0             137m
-    01-worker-container-runtime                                 3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
-    01-worker-kubelet                                           3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
+    01-master-container-runtime                                 3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
+    01-master-kubelet                                           3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
+    02-master-kubelet                                                                        3.1.0             137m
+    01-worker-container-runtime                                 3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
+    01-worker-kubelet                                           3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
     99-master-3c81ffa3-3b8d-11e9-ac1e-52fdfc072182-registries   3.11.0-744-g5b05d9d3-dirty                     133m
     99-worker-3c83a226-3b8d-11e9-ac1e-52fdfc072182-registries   3.11.0-744-g5b05d9d3-dirty                     133m
-    master-55491738d7cd1ad6c72891e77c35e024                     3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
-    worker-edab0895c59dba7a566f4b955d87d964                     3.11.0-744-g5b05d9d3-dirty   2.2.0             137m
+    master-55491738d7cd1ad6c72891e77c35e024                     3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
+    worker-edab0895c59dba7a566f4b955d87d964                     3.11.0-744-g5b05d9d3-dirty   3.1.0             137m
     ```
 
 #### Nodes with Custom Kernel Arguments
@@ -423,6 +421,9 @@ Example application of `loglevel=7` (change Linux kernel log level to KERN_DEBUG
         machineconfiguration.openshift.io/role: "master"
       name: 99-master-kargs-loglevel
     spec:
+      config:
+        ignition:
+          version: 3.1.0
       kernelArguments:
         - 'loglevel=7'
     EOF
@@ -440,10 +441,10 @@ Example application of `loglevel=7` (change Linux kernel log level to KERN_DEBUG
     ```console
     $ oc --kubeconfig log_debug_cluster/auth/kubeconfig get machineconfigs
     NAME                                                        GENERATEDBYCONTROLLER                      IGNITIONVERSION   CREATED
-    99-master-kargs-loglevel                                    bd846958bc95d049547164046a962054fca093df   2.2.0             26h
-    99-master-ssh                                               bd846958bc95d049547164046a962054fca093df   2.2.0             26h
+    99-master-kargs-loglevel                                    bd846958bc95d049547164046a962054fca093df   3.1.0             26h
+    99-master-ssh                                               bd846958bc95d049547164046a962054fca093df   3.1.0             26h
     ...
-    rendered-master-5f4a5bd806567871be1b608474eca373            bd846958bc95d049547164046a962054fca093df   2.2.0             26h
+    rendered-master-5f4a5bd806567871be1b608474eca373            bd846958bc95d049547164046a962054fca093df   3.1.0             26h
 
     $ oc describe machineconfig/rendered-master-5f4a5bd806567871be1b608474eca373 | grep -A 1 "Kernel Arguments"
       Kernel Arguments:
@@ -476,6 +477,9 @@ Example for switching to RT kernel on worker nodes during initial cluster instal
         machineconfiguration.openshift.io/role: "worker"
       name: 99-worker-kerneltype
     spec:
+      config:
+        ignition:
+          version: 3.1.0
       kernelType: realtime
     EOF
     ```
@@ -492,9 +496,9 @@ Example for switching to RT kernel on worker nodes during initial cluster instal
     $ oc --kubeconfig realtime_kernel/auth/kubeconfig get machineconfigs
     NAME                                                        GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
     ...
-    99-worker-kerneltype                                                                                                     80m
-    99-worker-ssh                                                                                          2.2.0             80m
-    rendered-worker-853ba9bf0337db528a857a9c7380b95a            6306be9274cd3052f5075c81fa447c7895b7b9f4   2.2.0             78m
+    99-worker-kerneltype                                                                                   3.1.0             80m
+    99-worker-ssh                                                                                          3.1.0             80m
+    rendered-worker-853ba9bf0337db528a857a9c7380b95a            6306be9274cd3052f5075c81fa447c7895b7b9f4   3.1.0             78m
     ...
 
 4. To confirm that worker node has switched to RT kernel, access one of the worker node and run `uname -a`
@@ -508,6 +512,28 @@ Example for switching to RT kernel on worker nodes during initial cluster instal
 
 **Note:**  The RT kernel lowers throughput (performance) in return for improved worst-case latency bounds. This feature is intended only for use cases that require consistent low latency. For more information, see the [Linux Foundation wiki](https://wiki.linuxfoundation.org/realtime/start) and the [RHEL RT portal](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_for_real_time/8/).
 
+#### Enabling RHCOS Extensions
+RHCOS is a minimal OCP focused OS which provides capabilities common across all the platforms. With extensions support, beginning in OCP 4.6 and onward, users can enable a limited set of additional functionality on the RHCOS nodes. In OCP 4.6 the supported extension is `usbguard`.
+
+Extensions can be installed by creating a MachineConfig object. It can be enabled during cluster installation as well as later on. See [customizing MachineConfig](#install-time-customization-for-machine-configuration) to enable an extension during install time. For day2 install, see [MachineConfiguration](https://github.com/openshift/machine-config-operator/blob/master/docs/MachineConfiguration.md#RHCO-Extensions) doc.
+
+Example MachineConfig to install usbguard on worker nodes:
+
+ ```yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: worker-extensions
+spec:
+  config:
+    ignition:
+      version: 3.1.0
+  extensions:
+    - usbguard
+  ```
+
 ## OS Customization (unvalidated)
 
 In rare circumstances, certain modifications to the bootstrap and other machines may be necessary. The installer provides the "ignition-configs" target, which allows arbitrary modification to the [Ignition Configs][ignition] used to boot these machines. Note that there is currently no validation on the modifications that are made, so it is possible that the changes will result in a non-functioning cluster.
@@ -517,9 +543,9 @@ An example `worker.ign` is shown below. It has been modified to increase the HTT
 ```json ignition
 {
   "ignition": {
-    "version": "2.2.0",
+    "version": "3.1.0",
     "config": {
-      "append": [{
+      "merge": [{
         "source": "https://test-cluster-api.example.com:22623/config/worker"
       }]
     },

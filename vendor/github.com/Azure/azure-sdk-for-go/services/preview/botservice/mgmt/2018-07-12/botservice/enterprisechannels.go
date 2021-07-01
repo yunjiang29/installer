@@ -36,7 +36,9 @@ func NewEnterpriseChannelsClient(subscriptionID string) EnterpriseChannelsClient
 	return NewEnterpriseChannelsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewEnterpriseChannelsClientWithBaseURI creates an instance of the EnterpriseChannelsClient client.
+// NewEnterpriseChannelsClientWithBaseURI creates an instance of the EnterpriseChannelsClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewEnterpriseChannelsClientWithBaseURI(baseURI string, subscriptionID string) EnterpriseChannelsClient {
 	return EnterpriseChannelsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -71,6 +73,7 @@ func (client EnterpriseChannelsClient) CheckNameAvailability(ctx context.Context
 	result, err = client.CheckNameAvailabilityResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "CheckNameAvailability", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -96,8 +99,7 @@ func (client EnterpriseChannelsClient) CheckNameAvailabilityPreparer(ctx context
 // CheckNameAvailabilitySender sends the CheckNameAvailability request. The method will close the
 // http.Response Body if it receives an error.
 func (client EnterpriseChannelsClient) CheckNameAvailabilitySender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
 }
 
 // CheckNameAvailabilityResponder handles the response to the CheckNameAvailability request. The method always
@@ -105,7 +107,6 @@ func (client EnterpriseChannelsClient) CheckNameAvailabilitySender(req *http.Req
 func (client EnterpriseChannelsClient) CheckNameAvailabilityResponder(resp *http.Response) (result EnterpriseChannelCheckNameAvailabilityResponse, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -152,7 +153,7 @@ func (client EnterpriseChannelsClient) Create(ctx context.Context, resourceGroup
 
 	result, err = client.CreateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Create", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Create", nil, "Failure sending request")
 		return
 	}
 
@@ -185,13 +186,38 @@ func (client EnterpriseChannelsClient) CreatePreparer(ctx context.Context, resou
 // CreateSender sends the Create request. The method will close the
 // http.Response Body if it receives an error.
 func (client EnterpriseChannelsClient) CreateSender(req *http.Request) (future EnterpriseChannelsCreateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client EnterpriseChannelsClient) (ec EnterpriseChannel, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsCreateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("botservice.EnterpriseChannelsCreateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		ec.Response.Response, err = future.GetResult(sender)
+		if ec.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsCreateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && ec.Response.Response.StatusCode != http.StatusNoContent {
+			ec, err = client.CreateResponder(ec.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsCreateFuture", "Result", ec.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -200,7 +226,6 @@ func (client EnterpriseChannelsClient) CreateSender(req *http.Request) (future E
 func (client EnterpriseChannelsClient) CreateResponder(resp *http.Response) (result EnterpriseChannel, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -243,7 +268,7 @@ func (client EnterpriseChannelsClient) Delete(ctx context.Context, resourceGroup
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -274,13 +299,28 @@ func (client EnterpriseChannelsClient) DeletePreparer(ctx context.Context, resou
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client EnterpriseChannelsClient) DeleteSender(req *http.Request) (future EnterpriseChannelsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client EnterpriseChannelsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("botservice.EnterpriseChannelsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -289,7 +329,6 @@ func (client EnterpriseChannelsClient) DeleteSender(req *http.Request) (future E
 func (client EnterpriseChannelsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -339,6 +378,7 @@ func (client EnterpriseChannelsClient) Get(ctx context.Context, resourceGroupNam
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -368,8 +408,7 @@ func (client EnterpriseChannelsClient) GetPreparer(ctx context.Context, resource
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client EnterpriseChannelsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -377,7 +416,6 @@ func (client EnterpriseChannelsClient) GetSender(req *http.Request) (*http.Respo
 func (client EnterpriseChannelsClient) GetResponder(resp *http.Response) (result EnterpriseChannel, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -424,6 +462,11 @@ func (client EnterpriseChannelsClient) ListByResourceGroup(ctx context.Context, 
 	result.ecrl, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.ecrl.hasNextLink() && result.ecrl.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -452,8 +495,7 @@ func (client EnterpriseChannelsClient) ListByResourceGroupPreparer(ctx context.C
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client EnterpriseChannelsClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -461,7 +503,6 @@ func (client EnterpriseChannelsClient) ListByResourceGroupSender(req *http.Reque
 func (client EnterpriseChannelsClient) ListByResourceGroupResponder(resp *http.Response) (result EnterpriseChannelResponseList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -542,7 +583,7 @@ func (client EnterpriseChannelsClient) Update(ctx context.Context, resourceGroup
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -575,13 +616,38 @@ func (client EnterpriseChannelsClient) UpdatePreparer(ctx context.Context, resou
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client EnterpriseChannelsClient) UpdateSender(req *http.Request) (future EnterpriseChannelsUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client EnterpriseChannelsClient) (ec EnterpriseChannel, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("botservice.EnterpriseChannelsUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		ec.Response.Response, err = future.GetResult(sender)
+		if ec.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && ec.Response.Response.StatusCode != http.StatusNoContent {
+			ec, err = client.UpdateResponder(ec.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "botservice.EnterpriseChannelsUpdateFuture", "Result", ec.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -590,7 +656,6 @@ func (client EnterpriseChannelsClient) UpdateSender(req *http.Request) (future E
 func (client EnterpriseChannelsClient) UpdateResponder(resp *http.Response) (result EnterpriseChannel, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

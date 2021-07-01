@@ -2,19 +2,23 @@ package containers
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2019-10-01/containerservice"
+	computeValidate "github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/compute/validate"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/containers/validate"
+
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2020-12-01/containerservice"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/azure"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/validate"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
 
 func SchemaDefaultNodePool() *schema.Schema {
 	return &schema.Schema{
 		Type:     schema.TypeList,
-		Optional: true,
+		Required: true,
 		MaxItems: 1,
 		Elem: &schema.Resource{
 			Schema: map[string]*schema.Schema{
@@ -41,13 +45,14 @@ func SchemaDefaultNodePool() *schema.Schema {
 					Type:         schema.TypeString,
 					Required:     true,
 					ForceNew:     true,
-					ValidateFunc: validate.NoEmptyStrings,
+					ValidateFunc: validation.StringIsNotEmpty,
 				},
 
 				// Optional
 				"availability_zones": {
 					Type:     schema.TypeList,
 					Optional: true,
+					ForceNew: true,
 					Elem: &schema.Schema{
 						Type: schema.TypeString,
 					},
@@ -64,10 +69,17 @@ func SchemaDefaultNodePool() *schema.Schema {
 					ForceNew: true,
 				},
 
+				"enable_host_encryption": {
+					Type:     schema.TypeBool,
+					Optional: true,
+					ForceNew: true,
+				},
+
 				"max_count": {
-					Type:         schema.TypeInt,
-					Optional:     true,
-					ValidateFunc: validation.IntBetween(1, 100),
+					Type:     schema.TypeInt,
+					Optional: true,
+					// NOTE: rather than setting `0` users should instead pass `null` here
+					ValidateFunc: validation.IntBetween(1, 1000),
 				},
 
 				"max_pods": {
@@ -78,23 +90,38 @@ func SchemaDefaultNodePool() *schema.Schema {
 				},
 
 				"min_count": {
-					Type:         schema.TypeInt,
-					Optional:     true,
-					ValidateFunc: validation.IntBetween(1, 100),
+					Type:     schema.TypeInt,
+					Optional: true,
+					// NOTE: rather than setting `0` users should instead pass `null` here
+					ValidateFunc: validation.IntBetween(1, 1000),
 				},
 
 				"node_count": {
 					Type:         schema.TypeInt,
 					Optional:     true,
 					Computed:     true,
-					ValidateFunc: validation.IntBetween(1, 100),
+					ValidateFunc: validation.IntBetween(1, 1000),
+				},
+
+				"node_labels": {
+					Type:     schema.TypeMap,
+					ForceNew: true,
+					Optional: true,
+					Elem: &schema.Schema{
+						Type: schema.TypeString,
+					},
 				},
 
 				"node_taints": {
 					Type:     schema.TypeList,
+					ForceNew: true,
 					Optional: true,
-					Elem:     &schema.Schema{Type: schema.TypeString},
+					Elem: &schema.Schema{
+						Type: schema.TypeString,
+					},
 				},
+
+				"tags": tags.Schema(),
 
 				"os_disk_size_gb": {
 					Type:         schema.TypeInt,
@@ -104,12 +131,42 @@ func SchemaDefaultNodePool() *schema.Schema {
 					ValidateFunc: validation.IntAtLeast(1),
 				},
 
+				"os_disk_type": {
+					Type:     schema.TypeString,
+					Optional: true,
+					ForceNew: true,
+					Default:  containerservice.Managed,
+					ValidateFunc: validation.StringInSlice([]string{
+						string(containerservice.Ephemeral),
+						string(containerservice.Managed),
+					}, false),
+				},
+
 				"vnet_subnet_id": {
 					Type:         schema.TypeString,
 					Optional:     true,
 					ForceNew:     true,
 					ValidateFunc: azure.ValidateResourceID,
 				},
+				"orchestrator_version": {
+					Type:         schema.TypeString,
+					Optional:     true,
+					Computed:     true,
+					ValidateFunc: validation.StringIsNotEmpty,
+				},
+				"proximity_placement_group_id": {
+					Type:         schema.TypeString,
+					Optional:     true,
+					ForceNew:     true,
+					ValidateFunc: computeValidate.ProximityPlacementGroupID,
+				},
+				"only_critical_addons_enabled": {
+					Type:     schema.TypeBool,
+					Optional: true,
+					ForceNew: true,
+				},
+
+				"upgrade_settings": upgradeSettingsSchema(),
 			},
 		},
 	}
@@ -120,54 +177,78 @@ func ConvertDefaultNodePoolToAgentPool(input *[]containerservice.ManagedClusterA
 	return containerservice.AgentPool{
 		Name: defaultCluster.Name,
 		ManagedClusterAgentPoolProfileProperties: &containerservice.ManagedClusterAgentPoolProfileProperties{
-			Count:                  defaultCluster.Count,
-			VMSize:                 defaultCluster.VMSize,
-			OsDiskSizeGB:           defaultCluster.OsDiskSizeGB,
-			VnetSubnetID:           defaultCluster.VnetSubnetID,
-			MaxPods:                defaultCluster.MaxPods,
-			OsType:                 defaultCluster.OsType,
-			MaxCount:               defaultCluster.MaxCount,
-			MinCount:               defaultCluster.MinCount,
-			EnableAutoScaling:      defaultCluster.EnableAutoScaling,
-			Type:                   defaultCluster.Type,
-			OrchestratorVersion:    defaultCluster.OrchestratorVersion,
-			AvailabilityZones:      defaultCluster.AvailabilityZones,
-			EnableNodePublicIP:     defaultCluster.EnableNodePublicIP,
-			ScaleSetPriority:       defaultCluster.ScaleSetPriority,
-			ScaleSetEvictionPolicy: defaultCluster.ScaleSetEvictionPolicy,
-			NodeTaints:             defaultCluster.NodeTaints,
+			Count:                     defaultCluster.Count,
+			VMSize:                    defaultCluster.VMSize,
+			OsDiskSizeGB:              defaultCluster.OsDiskSizeGB,
+			OsDiskType:                defaultCluster.OsDiskType,
+			VnetSubnetID:              defaultCluster.VnetSubnetID,
+			MaxPods:                   defaultCluster.MaxPods,
+			OsType:                    defaultCluster.OsType,
+			MaxCount:                  defaultCluster.MaxCount,
+			MinCount:                  defaultCluster.MinCount,
+			EnableAutoScaling:         defaultCluster.EnableAutoScaling,
+			Type:                      defaultCluster.Type,
+			OrchestratorVersion:       defaultCluster.OrchestratorVersion,
+			ProximityPlacementGroupID: defaultCluster.ProximityPlacementGroupID,
+			AvailabilityZones:         defaultCluster.AvailabilityZones,
+			EnableNodePublicIP:        defaultCluster.EnableNodePublicIP,
+			ScaleSetPriority:          defaultCluster.ScaleSetPriority,
+			ScaleSetEvictionPolicy:    defaultCluster.ScaleSetEvictionPolicy,
+			SpotMaxPrice:              defaultCluster.SpotMaxPrice,
+			Mode:                      defaultCluster.Mode,
+			NodeLabels:                defaultCluster.NodeLabels,
+			NodeTaints:                defaultCluster.NodeTaints,
+			Tags:                      defaultCluster.Tags,
+			UpgradeSettings:           defaultCluster.UpgradeSettings,
 		},
 	}
 }
 
 func ExpandDefaultNodePool(d *schema.ResourceData) (*[]containerservice.ManagedClusterAgentPoolProfile, error) {
 	input := d.Get("default_node_pool").([]interface{})
-	// TODO: in 2.0 make this Required
-	// this exists to allow users to migrate to default_node_pool
-	if len(input) == 0 {
-		return nil, nil
-	}
 
 	raw := input[0].(map[string]interface{})
 	enableAutoScaling := raw["enable_auto_scaling"].(bool)
+	nodeLabelsRaw := raw["node_labels"].(map[string]interface{})
+	nodeLabels := utils.ExpandMapStringPtrString(nodeLabelsRaw)
 	nodeTaintsRaw := raw["node_taints"].([]interface{})
 	nodeTaints := utils.ExpandStringSlice(nodeTaintsRaw)
 
+	if len(*nodeTaints) != 0 {
+		return nil, fmt.Errorf("The AKS API has removed support for tainting all nodes in the default node pool and it is no longer possible to configure this. To taint a node pool, create a separate one.")
+	}
+
+	criticalAddonsEnabled := raw["only_critical_addons_enabled"].(bool)
+	if criticalAddonsEnabled {
+		*nodeTaints = append(*nodeTaints, "CriticalAddonsOnly=true:NoSchedule")
+	}
+
+	t := raw["tags"].(map[string]interface{})
+
 	profile := containerservice.ManagedClusterAgentPoolProfile{
-		EnableAutoScaling:  utils.Bool(enableAutoScaling),
-		EnableNodePublicIP: utils.Bool(raw["enable_node_public_ip"].(bool)),
-		Name:               utils.String(raw["name"].(string)),
-		NodeTaints:         nodeTaints,
-		Type:               containerservice.AgentPoolType(raw["type"].(string)),
-		VMSize:             containerservice.VMSizeTypes(raw["vm_size"].(string)),
+		EnableAutoScaling:      utils.Bool(enableAutoScaling),
+		EnableNodePublicIP:     utils.Bool(raw["enable_node_public_ip"].(bool)),
+		EnableEncryptionAtHost: utils.Bool(raw["enable_host_encryption"].(bool)),
+		Name:                   utils.String(raw["name"].(string)),
+		NodeLabels:             nodeLabels,
+		NodeTaints:             nodeTaints,
+		Tags:                   tags.Expand(t),
+		Type:                   containerservice.AgentPoolType(raw["type"].(string)),
+		VMSize:                 containerservice.VMSizeTypes(raw["vm_size"].(string)),
 
 		// at this time the default node pool has to be Linux or the AKS cluster fails to provision with:
 		// Pods not in Running status: coredns-7fc597cc45-v5z7x,coredns-autoscaler-7ccc76bfbd-djl7j,metrics-server-cbd95f966-5rl97,tunnelfront-7d9884977b-wpbvn
 		// Windows agents can be configured via the separate node pool resource
 		OsType: containerservice.Linux,
 
-		//// TODO: support these in time
-		// OrchestratorVersion:    nil,
+		// without this set the API returns:
+		// Code="MustDefineAtLeastOneSystemPool" Message="Must define at least one system pool."
+		// since this is the "default" node pool we can assume this is a system node pool
+		Mode: containerservice.System,
+
+		UpgradeSettings: expandUpgradeSettings(raw["upgrade_settings"].([]interface{})),
+
+		// // TODO: support these in time
 		// ScaleSetEvictionPolicy: "",
 		// ScaleSetPriority:       "",
 	}
@@ -188,38 +269,59 @@ func ExpandDefaultNodePool(d *schema.ResourceData) (*[]containerservice.ManagedC
 		profile.OsDiskSizeGB = utils.Int32(osDiskSizeGB)
 	}
 
+	profile.OsDiskType = containerservice.Managed
+	if osDiskType := raw["os_disk_type"].(string); osDiskType != "" {
+		profile.OsDiskType = containerservice.OSDiskType(raw["os_disk_type"].(string))
+	}
+
 	if vnetSubnetID := raw["vnet_subnet_id"].(string); vnetSubnetID != "" {
 		profile.VnetSubnetID = utils.String(vnetSubnetID)
+	}
+
+	if orchestratorVersion := raw["orchestrator_version"].(string); orchestratorVersion != "" {
+		profile.OrchestratorVersion = utils.String(orchestratorVersion)
+	}
+
+	if proximityPlacementGroupId := raw["proximity_placement_group_id"].(string); proximityPlacementGroupId != "" {
+		profile.ProximityPlacementGroupID = utils.String(proximityPlacementGroupId)
 	}
 
 	count := raw["node_count"].(int)
 	maxCount := raw["max_count"].(int)
 	minCount := raw["min_count"].(int)
 
-	// Count must be set for the initial creation when using AutoScaling but cannot be updated
-	autoScaledCluster := enableAutoScaling && d.IsNewResource()
-
-	// however it must always be sent for manually scaled clusters
-	manuallyScaledCluster := !enableAutoScaling && (d.IsNewResource() || d.HasChange("default_node_pool.0.node_count"))
-
-	if autoScaledCluster || manuallyScaledCluster {
-		// users creating an auto-scaled cluster may not set the `node_count` field - if so use `min_count`
-		if count == 0 && autoScaledCluster {
-			count = minCount
-		}
-
-		profile.Count = utils.Int32(int32(count))
-	}
+	// Count must always be set (see #6094), RP behaviour has changed
+	// since the API version upgrade in v2.1.0 making Count required
+	// for all create/update requests
+	profile.Count = utils.Int32(int32(count))
 
 	if enableAutoScaling {
+		// if Count has not been set use min count
+		if count == 0 {
+			count = minCount
+			profile.Count = utils.Int32(int32(count))
+		}
+
+		// Count must be set for the initial creation when using AutoScaling but cannot be updated
+		if d.HasChange("default_node_pool.0.node_count") && !d.IsNewResource() {
+			return nil, fmt.Errorf("cannot change `node_count` when `enable_auto_scaling` is set to `true`")
+		}
+
 		if maxCount > 0 {
 			profile.MaxCount = utils.Int32(int32(maxCount))
+			if maxCount < count {
+				return nil, fmt.Errorf("`node_count`(%d) must be equal to or less than `max_count`(%d) when `enable_auto_scaling` is set to `true`", count, maxCount)
+			}
 		} else {
 			return nil, fmt.Errorf("`max_count` must be configured when `enable_auto_scaling` is set to `true`")
 		}
 
 		if minCount > 0 {
 			profile.MinCount = utils.Int32(int32(minCount))
+
+			if minCount > count && d.IsNewResource() {
+				return nil, fmt.Errorf("`node_count`(%d) must be equal to or greater than `min_count`(%d) when `enable_auto_scaling` is set to `true`", count, minCount)
+			}
 		} else {
 			return nil, fmt.Errorf("`min_count` must be configured when `enable_auto_scaling` is set to `true`")
 		}
@@ -228,7 +330,7 @@ func ExpandDefaultNodePool(d *schema.ResourceData) (*[]containerservice.ManagedC
 			return nil, fmt.Errorf("`max_count` must be >= `min_count`")
 		}
 	} else if minCount > 0 || maxCount > 0 {
-		return nil, fmt.Errorf("`max_count` and `min_count` must be set to `0` when enable_auto_scaling is set to `false`")
+		return nil, fmt.Errorf("`max_count`(%d) and `min_count`(%d) must be set to `null` when `enable_auto_scaling` is set to `false`", maxCount, minCount)
 	}
 
 	return &[]containerservice.ManagedClusterAgentPoolProfile{
@@ -266,6 +368,11 @@ func FlattenDefaultNodePool(input *[]containerservice.ManagedClusterAgentPoolPro
 		enableNodePublicIP = *agentPool.EnableNodePublicIP
 	}
 
+	enableHostEncryption := false
+	if agentPool.EnableEncryptionAtHost != nil {
+		enableHostEncryption = *agentPool.EnableEncryptionAtHost
+	}
+
 	maxCount := 0
 	if agentPool.MaxCount != nil {
 		maxCount = int(*agentPool.MaxCount)
@@ -286,9 +393,21 @@ func FlattenDefaultNodePool(input *[]containerservice.ManagedClusterAgentPoolPro
 		name = *agentPool.Name
 	}
 
-	var nodeTaints []string
+	var nodeLabels map[string]string
+	if agentPool.NodeLabels != nil {
+		nodeLabels = make(map[string]string)
+		for k, v := range agentPool.NodeLabels {
+			nodeLabels[k] = *v
+		}
+	}
+
+	criticalAddonsEnabled := false
 	if agentPool.NodeTaints != nil {
-		nodeTaints = *agentPool.NodeTaints
+		for _, taint := range *agentPool.NodeTaints {
+			if strings.EqualFold(taint, "CriticalAddonsOnly=true:NoSchedule") {
+				criticalAddonsEnabled = true
+			}
+		}
 	}
 
 	osDiskSizeGB := 0
@@ -296,26 +415,51 @@ func FlattenDefaultNodePool(input *[]containerservice.ManagedClusterAgentPoolPro
 		osDiskSizeGB = int(*agentPool.OsDiskSizeGB)
 	}
 
+	osDiskType := containerservice.Managed
+	if agentPool.OsDiskType != "" {
+		osDiskType = agentPool.OsDiskType
+	}
+
 	vnetSubnetId := ""
 	if agentPool.VnetSubnetID != nil {
 		vnetSubnetId = *agentPool.VnetSubnetID
 	}
 
+	orchestratorVersion := ""
+	if agentPool.OrchestratorVersion != nil {
+		orchestratorVersion = *agentPool.OrchestratorVersion
+	}
+
+	proximityPlacementGroupId := ""
+	if agentPool.ProximityPlacementGroupID != nil {
+		proximityPlacementGroupId = *agentPool.ProximityPlacementGroupID
+	}
+
+	upgradeSettings := flattenUpgradeSettings(agentPool.UpgradeSettings)
+
 	return &[]interface{}{
 		map[string]interface{}{
-			"availability_zones":    availabilityZones,
-			"enable_auto_scaling":   enableAutoScaling,
-			"enable_node_public_ip": enableNodePublicIP,
-			"max_count":             maxCount,
-			"max_pods":              maxPods,
-			"min_count":             minCount,
-			"name":                  name,
-			"node_count":            count,
-			"node_taints":           nodeTaints,
-			"os_disk_size_gb":       osDiskSizeGB,
-			"type":                  string(agentPool.Type),
-			"vm_size":               string(agentPool.VMSize),
-			"vnet_subnet_id":        vnetSubnetId,
+			"availability_zones":           availabilityZones,
+			"enable_auto_scaling":          enableAutoScaling,
+			"enable_node_public_ip":        enableNodePublicIP,
+			"enable_host_encryption":       enableHostEncryption,
+			"max_count":                    maxCount,
+			"max_pods":                     maxPods,
+			"min_count":                    minCount,
+			"name":                         name,
+			"node_count":                   count,
+			"node_labels":                  nodeLabels,
+			"node_taints":                  []string{},
+			"os_disk_size_gb":              osDiskSizeGB,
+			"os_disk_type":                 string(osDiskType),
+			"tags":                         tags.Flatten(agentPool.Tags),
+			"type":                         string(agentPool.Type),
+			"vm_size":                      string(agentPool.VMSize),
+			"orchestrator_version":         orchestratorVersion,
+			"proximity_placement_group_id": proximityPlacementGroupId,
+			"upgrade_settings":             upgradeSettings,
+			"vnet_subnet_id":               vnetSubnetId,
+			"only_critical_addons_enabled": criticalAddonsEnabled,
 		},
 	}, nil
 }
@@ -333,10 +477,15 @@ func findDefaultNodePool(input *[]containerservice.ManagedClusterAgentPoolProfil
 				break
 			}
 		}
-	} else {
+	}
+
+	if agentPool == nil {
 		// otherwise we need to fall back to the name of the first agent pool
 		for _, v := range *input {
 			if v.Name == nil {
+				continue
+			}
+			if v.Mode != containerservice.System {
 				continue
 			}
 

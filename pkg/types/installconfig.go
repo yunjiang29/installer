@@ -2,12 +2,15 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/openshift/installer/pkg/ipnet"
 	"github.com/openshift/installer/pkg/types/aws"
 	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/baremetal"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
+	"github.com/openshift/installer/pkg/types/kubevirt"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	"github.com/openshift/installer/pkg/types/none"
 	"github.com/openshift/installer/pkg/types/openstack"
@@ -20,7 +23,8 @@ const (
 	// InstallConfigVersion is the version supported by this package.
 	// If you bump this, you must also update the list of convertable values in
 	// pkg/types/conversion/installconfig.go
-	InstallConfigVersion = "v1"
+	InstallConfigVersion  = "v1"
+	workerMachinePoolName = "worker"
 )
 
 var (
@@ -40,6 +44,8 @@ var (
 	// to the user in the interactive wizard.
 	HiddenPlatformNames = []string{
 		baremetal.Name,
+		ibmcloud.Name,
+		kubevirt.Name,
 		none.Name,
 	}
 )
@@ -119,11 +125,34 @@ type InstallConfig struct {
 	// +kubebuilder:default=false
 	// +optional
 	FIPS bool `json:"fips,omitempty"`
+
+	// CredentialsMode is used to explicitly set the mode with which CredentialRequests are satisfied.
+	//
+	// If this field is set, then the installer will not attempt to query the cloud permissions before attempting
+	// installation. If the field is not set or empty, then the installer will perform its normal verification that the
+	// credentials provided are sufficient to perform an installation.
+	//
+	// There are three possible values for this field, but the valid values are dependent upon the platform being used.
+	// "Mint": create new credentials with a subset of the overall permissions for each CredentialsRequest
+	// "Passthrough": copy the credentials with all of the overall permissions for each CredentialsRequest
+	// "Manual": CredentialsRequests must be handled manually by the user
+	//
+	// For each of the following platforms, the field can set to the specified values. For all other platforms, the
+	// field must not be set.
+	// AWS: "Mint", "Passthrough", "Manual"
+	// Azure: "Mint", "Passthrough", "Manual"
+	// GCP: "Mint", "Passthrough", "Manual"
+	// +optional
+	CredentialsMode CredentialsMode `json:"credentialsMode,omitempty"`
+
+	// BootstrapInPlace is the configuration for installing a single node
+	// with bootstrap in place installation.
+	BootstrapInPlace *BootstrapInPlace `json:"bootstrapInPlace,omitempty"`
 }
 
 // ClusterDomain returns the DNS domain that all records for a cluster must belong to.
 func (c *InstallConfig) ClusterDomain() string {
-	return fmt.Sprintf("%s.%s", c.ObjectMeta.Name, c.BaseDomain)
+	return fmt.Sprintf("%s.%s", c.ObjectMeta.Name, strings.TrimSuffix(c.BaseDomain, "."))
 }
 
 // Platform is the configuration for the specific platform upon which to perform
@@ -145,6 +174,10 @@ type Platform struct {
 	// +optional
 	GCP *gcp.Platform `json:"gcp,omitempty"`
 
+	// IBMCloud is the configuration used when installing on IBM Cloud.
+	// +optional
+	IBMCloud *ibmcloud.Platform `json:"ibmcloud,omitempty"`
+
 	// Libvirt is the configuration used when installing on libvirt.
 	// +optional
 	Libvirt *libvirt.Platform `json:"libvirt,omitempty"`
@@ -164,6 +197,10 @@ type Platform struct {
 	// Ovirt is the configuration used when installing on oVirt.
 	// +optional
 	Ovirt *ovirt.Platform `json:"ovirt,omitempty"`
+
+	// Kubevirt is the configuration used when installing on kubevirt.
+	// +optional
+	Kubevirt *kubevirt.Platform `json:"kubevirt,omitempty"`
 }
 
 // Name returns a string representation of the platform (e.g. "aws" if
@@ -181,6 +218,8 @@ func (p *Platform) Name() string {
 		return baremetal.Name
 	case p.GCP != nil:
 		return gcp.Name
+	case p.IBMCloud != nil:
+		return ibmcloud.Name
 	case p.Libvirt != nil:
 		return libvirt.Name
 	case p.None != nil:
@@ -191,6 +230,8 @@ func (p *Platform) Name() string {
 		return vsphere.Name
 	case p.Ovirt != nil:
 		return ovirt.Name
+	case p.Kubevirt != nil:
+		return kubevirt.Name
 	default:
 		return ""
 	}
@@ -227,7 +268,7 @@ type Networking struct {
 	// +optional
 	ServiceNetwork []ipnet.IPNet `json:"serviceNetwork,omitempty"`
 
-	// Deprected types, scheduled to be removed
+	// Deprecated types, scheduled to be removed
 
 	// Deprecated name for MachineCIDRs. If set, MachineCIDRs must
 	// be empty or the first index must match.
@@ -238,7 +279,7 @@ type Networking struct {
 	// +optional
 	DeprecatedType string `json:"type,omitempty"`
 
-	// Depcreated name for ServiceNetwork
+	// Deprecated name for ServiceNetwork
 	// +optional
 	DeprecatedServiceCIDR *ipnet.IPNet `json:"serviceCIDR,omitempty"`
 
@@ -260,8 +301,10 @@ type ClusterNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 
 	// HostPrefix is the prefix size to allocate to each node from the CIDR.
-	// For example, 24 would allocate 2^8=256 adresses to each node.
-	HostPrefix int32 `json:"hostPrefix"`
+	// For example, 24 would allocate 2^8=256 adresses to each node. If this
+	// field is not used by the plugin, it can be left unset.
+	// +optional
+	HostPrefix int32 `json:"hostPrefix,omitempty"`
 
 	// The size of blocks to allocate from the larger pool.
 	// This is the length in bits - so a 9 here will allocate a /23.
@@ -293,4 +336,38 @@ type ImageContentSource struct {
 	// Mirrors is one or more repositories that may also contain the same images.
 	// +optional
 	Mirrors []string `json:"mirrors,omitempty"`
+}
+
+// CredentialsMode is the mode by which CredentialsRequests will be satisfied.
+// +kubebuilder:validation:Enum="";Mint;Passthrough;Manual
+type CredentialsMode string
+
+const (
+	// ManualCredentialsMode indicates that cloud-credential-operator should not process any CredentialsRequests.
+	ManualCredentialsMode CredentialsMode = "Manual"
+
+	// MintCredentialsMode indicates that cloud-credential-operator should be creating users for each
+	// CredentialsRequest.
+	MintCredentialsMode CredentialsMode = "Mint"
+
+	// PassthroughCredentialsMode indicates that cloud-credential-operator should just copy over the cluster's
+	// cloud credentials for each CredentialsRequest.
+	PassthroughCredentialsMode CredentialsMode = "Passthrough"
+)
+
+// BootstrapInPlace defines the configuration for bootstrap-in-place installation
+type BootstrapInPlace struct {
+	// InstallationDisk is the target disk drive for coreos-installer
+	InstallationDisk string `json:"installationDisk"`
+}
+
+// WorkerMachinePool retrieves the worker MachinePool from InstallConfig.Compute
+func (c *InstallConfig) WorkerMachinePool() *MachinePool {
+	for _, machinePool := range c.Compute {
+		if machinePool.Name == workerMachinePoolName {
+			return &machinePool
+		}
+	}
+
+	return nil
 }

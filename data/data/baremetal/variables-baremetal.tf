@@ -1,6 +1,11 @@
-variable "bootstrap_provisioning_ip" {
+variable "ironic_uri" {
   type        = string
-  description = "IP for the bootstrap VM provisioning nic"
+  description = "URI for accessing the Ironic REST API"
+}
+
+variable "inspector_uri" {
+  type        = string
+  description = "URI for accessing the Ironic Inspector REST API"
 }
 
 variable "libvirt_uri" {
@@ -13,19 +18,24 @@ variable "bootstrap_os_image" {
   description = "The URL of the bootstrap OS disk image"
 }
 
-variable "external_bridge" {
+variable "ironic_username" {
   type        = string
-  description = "The name of the external bridge"
+  description = "Username for authentication to Ironic"
 }
 
-variable "provisioning_bridge" {
+variable "ironic_password" {
   type        = string
-  description = "The name of the provisioning bridge"
+  description = "Password for authentication to Ironic"
 }
 
 variable "hosts" {
   type        = list(map(string))
   description = "Hardware details for hosts"
+}
+
+variable "bridges" {
+  type        = list(map(string))
+  description = "A list of network bridge maps, containing the interface name and optionally the MAC address"
 }
 
 variable "properties" {

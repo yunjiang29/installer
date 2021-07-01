@@ -39,7 +39,8 @@ func NewManagedInstanceEncryptionProtectorsClient(subscriptionID string) Managed
 }
 
 // NewManagedInstanceEncryptionProtectorsClientWithBaseURI creates an instance of the
-// ManagedInstanceEncryptionProtectorsClient client.
+// ManagedInstanceEncryptionProtectorsClient client using a custom endpoint.  Use this when interacting with an Azure
+// cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewManagedInstanceEncryptionProtectorsClientWithBaseURI(baseURI string, subscriptionID string) ManagedInstanceEncryptionProtectorsClient {
 	return ManagedInstanceEncryptionProtectorsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -69,7 +70,7 @@ func (client ManagedInstanceEncryptionProtectorsClient) CreateOrUpdate(ctx conte
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -104,13 +105,38 @@ func (client ManagedInstanceEncryptionProtectorsClient) CreateOrUpdatePreparer(c
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceEncryptionProtectorsClient) CreateOrUpdateSender(req *http.Request) (future ManagedInstanceEncryptionProtectorsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedInstanceEncryptionProtectorsClient) (miep ManagedInstanceEncryptionProtector, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedInstanceEncryptionProtectorsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		miep.Response.Response, err = future.GetResult(sender)
+		if miep.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && miep.Response.Response.StatusCode != http.StatusNoContent {
+			miep, err = client.CreateOrUpdateResponder(miep.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsCreateOrUpdateFuture", "Result", miep.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -119,7 +145,6 @@ func (client ManagedInstanceEncryptionProtectorsClient) CreateOrUpdateSender(req
 func (client ManagedInstanceEncryptionProtectorsClient) CreateOrUpdateResponder(resp *http.Response) (result ManagedInstanceEncryptionProtector, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -159,6 +184,7 @@ func (client ManagedInstanceEncryptionProtectorsClient) Get(ctx context.Context,
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -189,8 +215,7 @@ func (client ManagedInstanceEncryptionProtectorsClient) GetPreparer(ctx context.
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceEncryptionProtectorsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -198,7 +223,6 @@ func (client ManagedInstanceEncryptionProtectorsClient) GetSender(req *http.Requ
 func (client ManagedInstanceEncryptionProtectorsClient) GetResponder(resp *http.Response) (result ManagedInstanceEncryptionProtector, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -239,6 +263,11 @@ func (client ManagedInstanceEncryptionProtectorsClient) ListByInstance(ctx conte
 	result.mieplr, err = client.ListByInstanceResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsClient", "ListByInstance", resp, "Failure responding to request")
+		return
+	}
+	if result.mieplr.hasNextLink() && result.mieplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -268,8 +297,7 @@ func (client ManagedInstanceEncryptionProtectorsClient) ListByInstancePreparer(c
 // ListByInstanceSender sends the ListByInstance request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceEncryptionProtectorsClient) ListByInstanceSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByInstanceResponder handles the response to the ListByInstance request. The method always
@@ -277,7 +305,6 @@ func (client ManagedInstanceEncryptionProtectorsClient) ListByInstanceSender(req
 func (client ManagedInstanceEncryptionProtectorsClient) ListByInstanceResponder(resp *http.Response) (result ManagedInstanceEncryptionProtectorListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -346,7 +373,7 @@ func (client ManagedInstanceEncryptionProtectorsClient) Revalidate(ctx context.C
 
 	result, err = client.RevalidateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsClient", "Revalidate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsClient", "Revalidate", nil, "Failure sending request")
 		return
 	}
 
@@ -378,13 +405,28 @@ func (client ManagedInstanceEncryptionProtectorsClient) RevalidatePreparer(ctx c
 // RevalidateSender sends the Revalidate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceEncryptionProtectorsClient) RevalidateSender(req *http.Request) (future ManagedInstanceEncryptionProtectorsRevalidateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedInstanceEncryptionProtectorsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedInstanceEncryptionProtectorsRevalidateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedInstanceEncryptionProtectorsRevalidateFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -393,7 +435,6 @@ func (client ManagedInstanceEncryptionProtectorsClient) RevalidateSender(req *ht
 func (client ManagedInstanceEncryptionProtectorsClient) RevalidateResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp

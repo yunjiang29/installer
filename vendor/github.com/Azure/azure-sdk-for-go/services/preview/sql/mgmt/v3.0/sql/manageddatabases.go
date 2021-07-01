@@ -38,15 +38,16 @@ func NewManagedDatabasesClient(subscriptionID string) ManagedDatabasesClient {
 	return NewManagedDatabasesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewManagedDatabasesClientWithBaseURI creates an instance of the ManagedDatabasesClient client.
+// NewManagedDatabasesClientWithBaseURI creates an instance of the ManagedDatabasesClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewManagedDatabasesClientWithBaseURI(baseURI string, subscriptionID string) ManagedDatabasesClient {
 	return ManagedDatabasesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
 
 // CompleteRestore completes the restore operation on a managed database.
 // Parameters:
-// resourceGroupName - the name of the resource group that contains the resource. You can obtain this value
-// from the Azure Resource Manager API or the portal.
+// resourceGroupName - the name of the resource group. The name is case insensitive.
 // managedInstanceName - the name of the managed instance.
 // databaseName - the name of the database.
 // parameters - the definition for completing the restore of this managed database.
@@ -62,6 +63,10 @@ func (client ManagedDatabasesClient) CompleteRestore(ctx context.Context, resour
 		}()
 	}
 	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}},
 		{TargetValue: parameters,
 			Constraints: []validation.Constraint{{Target: "parameters.LastBackupName", Name: validation.Null, Rule: true, Chain: nil}}}}); err != nil {
 		return result, validation.NewError("sql.ManagedDatabasesClient", "CompleteRestore", err.Error())
@@ -75,7 +80,7 @@ func (client ManagedDatabasesClient) CompleteRestore(ctx context.Context, resour
 
 	result, err = client.CompleteRestoreSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "CompleteRestore", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "CompleteRestore", nil, "Failure sending request")
 		return
 	}
 
@@ -91,7 +96,7 @@ func (client ManagedDatabasesClient) CompleteRestorePreparer(ctx context.Context
 		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
 	}
 
-	const APIVersion = "2018-06-01-preview"
+	const APIVersion = "2020-02-02-preview"
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
@@ -109,13 +114,28 @@ func (client ManagedDatabasesClient) CompleteRestorePreparer(ctx context.Context
 // CompleteRestoreSender sends the CompleteRestore request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedDatabasesClient) CompleteRestoreSender(req *http.Request) (future ManagedDatabasesCompleteRestoreFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedDatabasesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesCompleteRestoreFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedDatabasesCompleteRestoreFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -124,7 +144,6 @@ func (client ManagedDatabasesClient) CompleteRestoreSender(req *http.Request) (f
 func (client ManagedDatabasesClient) CompleteRestoreResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -133,8 +152,7 @@ func (client ManagedDatabasesClient) CompleteRestoreResponder(resp *http.Respons
 
 // CreateOrUpdate creates a new database or updates an existing database.
 // Parameters:
-// resourceGroupName - the name of the resource group that contains the resource. You can obtain this value
-// from the Azure Resource Manager API or the portal.
+// resourceGroupName - the name of the resource group. The name is case insensitive.
 // managedInstanceName - the name of the managed instance.
 // databaseName - the name of the database.
 // parameters - the requested database resource state.
@@ -149,6 +167,14 @@ func (client ManagedDatabasesClient) CreateOrUpdate(ctx context.Context, resourc
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
+	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}}}); err != nil {
+		return result, validation.NewError("sql.ManagedDatabasesClient", "CreateOrUpdate", err.Error())
+	}
+
 	req, err := client.CreateOrUpdatePreparer(ctx, resourceGroupName, managedInstanceName, databaseName, parameters)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "CreateOrUpdate", nil, "Failure preparing request")
@@ -157,7 +183,7 @@ func (client ManagedDatabasesClient) CreateOrUpdate(ctx context.Context, resourc
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -173,7 +199,7 @@ func (client ManagedDatabasesClient) CreateOrUpdatePreparer(ctx context.Context,
 		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
 	}
 
-	const APIVersion = "2018-06-01-preview"
+	const APIVersion = "2020-02-02-preview"
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
@@ -191,13 +217,38 @@ func (client ManagedDatabasesClient) CreateOrUpdatePreparer(ctx context.Context,
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedDatabasesClient) CreateOrUpdateSender(req *http.Request) (future ManagedDatabasesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedDatabasesClient) (md ManagedDatabase, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedDatabasesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		md.Response.Response, err = future.GetResult(sender)
+		if md.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && md.Response.Response.StatusCode != http.StatusNoContent {
+			md, err = client.CreateOrUpdateResponder(md.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesCreateOrUpdateFuture", "Result", md.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -206,7 +257,6 @@ func (client ManagedDatabasesClient) CreateOrUpdateSender(req *http.Request) (fu
 func (client ManagedDatabasesClient) CreateOrUpdateResponder(resp *http.Response) (result ManagedDatabase, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -216,8 +266,7 @@ func (client ManagedDatabasesClient) CreateOrUpdateResponder(resp *http.Response
 
 // Delete deletes a managed database.
 // Parameters:
-// resourceGroupName - the name of the resource group that contains the resource. You can obtain this value
-// from the Azure Resource Manager API or the portal.
+// resourceGroupName - the name of the resource group. The name is case insensitive.
 // managedInstanceName - the name of the managed instance.
 // databaseName - the name of the database.
 func (client ManagedDatabasesClient) Delete(ctx context.Context, resourceGroupName string, managedInstanceName string, databaseName string) (result ManagedDatabasesDeleteFuture, err error) {
@@ -231,6 +280,14 @@ func (client ManagedDatabasesClient) Delete(ctx context.Context, resourceGroupNa
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
+	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}}}); err != nil {
+		return result, validation.NewError("sql.ManagedDatabasesClient", "Delete", err.Error())
+	}
+
 	req, err := client.DeletePreparer(ctx, resourceGroupName, managedInstanceName, databaseName)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Delete", nil, "Failure preparing request")
@@ -239,7 +296,7 @@ func (client ManagedDatabasesClient) Delete(ctx context.Context, resourceGroupNa
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -255,7 +312,7 @@ func (client ManagedDatabasesClient) DeletePreparer(ctx context.Context, resourc
 		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
 	}
 
-	const APIVersion = "2018-06-01-preview"
+	const APIVersion = "2020-02-02-preview"
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
@@ -271,13 +328,28 @@ func (client ManagedDatabasesClient) DeletePreparer(ctx context.Context, resourc
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedDatabasesClient) DeleteSender(req *http.Request) (future ManagedDatabasesDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedDatabasesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedDatabasesDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -286,7 +358,6 @@ func (client ManagedDatabasesClient) DeleteSender(req *http.Request) (future Man
 func (client ManagedDatabasesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -295,8 +366,7 @@ func (client ManagedDatabasesClient) DeleteResponder(resp *http.Response) (resul
 
 // Get gets a managed database.
 // Parameters:
-// resourceGroupName - the name of the resource group that contains the resource. You can obtain this value
-// from the Azure Resource Manager API or the portal.
+// resourceGroupName - the name of the resource group. The name is case insensitive.
 // managedInstanceName - the name of the managed instance.
 // databaseName - the name of the database.
 func (client ManagedDatabasesClient) Get(ctx context.Context, resourceGroupName string, managedInstanceName string, databaseName string) (result ManagedDatabase, err error) {
@@ -310,6 +380,14 @@ func (client ManagedDatabasesClient) Get(ctx context.Context, resourceGroupName 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
+	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}}}); err != nil {
+		return result, validation.NewError("sql.ManagedDatabasesClient", "Get", err.Error())
+	}
+
 	req, err := client.GetPreparer(ctx, resourceGroupName, managedInstanceName, databaseName)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Get", nil, "Failure preparing request")
@@ -326,6 +404,7 @@ func (client ManagedDatabasesClient) Get(ctx context.Context, resourceGroupName 
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -340,7 +419,7 @@ func (client ManagedDatabasesClient) GetPreparer(ctx context.Context, resourceGr
 		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
 	}
 
-	const APIVersion = "2018-06-01-preview"
+	const APIVersion = "2020-02-02-preview"
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
@@ -356,8 +435,7 @@ func (client ManagedDatabasesClient) GetPreparer(ctx context.Context, resourceGr
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedDatabasesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -365,7 +443,6 @@ func (client ManagedDatabasesClient) GetSender(req *http.Request) (*http.Respons
 func (client ManagedDatabasesClient) GetResponder(resp *http.Response) (result ManagedDatabase, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -375,8 +452,7 @@ func (client ManagedDatabasesClient) GetResponder(resp *http.Response) (result M
 
 // ListByInstance gets a list of managed databases.
 // Parameters:
-// resourceGroupName - the name of the resource group that contains the resource. You can obtain this value
-// from the Azure Resource Manager API or the portal.
+// resourceGroupName - the name of the resource group. The name is case insensitive.
 // managedInstanceName - the name of the managed instance.
 func (client ManagedDatabasesClient) ListByInstance(ctx context.Context, resourceGroupName string, managedInstanceName string) (result ManagedDatabaseListResultPage, err error) {
 	if tracing.IsEnabled() {
@@ -389,6 +465,14 @@ func (client ManagedDatabasesClient) ListByInstance(ctx context.Context, resourc
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
+	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}}}); err != nil {
+		return result, validation.NewError("sql.ManagedDatabasesClient", "ListByInstance", err.Error())
+	}
+
 	result.fn = client.listByInstanceNextResults
 	req, err := client.ListByInstancePreparer(ctx, resourceGroupName, managedInstanceName)
 	if err != nil {
@@ -406,6 +490,11 @@ func (client ManagedDatabasesClient) ListByInstance(ctx context.Context, resourc
 	result.mdlr, err = client.ListByInstanceResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "ListByInstance", resp, "Failure responding to request")
+		return
+	}
+	if result.mdlr.hasNextLink() && result.mdlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -419,7 +508,7 @@ func (client ManagedDatabasesClient) ListByInstancePreparer(ctx context.Context,
 		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
 	}
 
-	const APIVersion = "2018-06-01-preview"
+	const APIVersion = "2020-02-02-preview"
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
@@ -435,8 +524,7 @@ func (client ManagedDatabasesClient) ListByInstancePreparer(ctx context.Context,
 // ListByInstanceSender sends the ListByInstance request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedDatabasesClient) ListByInstanceSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByInstanceResponder handles the response to the ListByInstance request. The method always
@@ -444,7 +532,6 @@ func (client ManagedDatabasesClient) ListByInstanceSender(req *http.Request) (*h
 func (client ManagedDatabasesClient) ListByInstanceResponder(resp *http.Response) (result ManagedDatabaseListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -489,10 +576,135 @@ func (client ManagedDatabasesClient) ListByInstanceComplete(ctx context.Context,
 	return
 }
 
+// ListInaccessibleByInstance gets a list of inaccessible managed databases in a managed instance
+// Parameters:
+// resourceGroupName - the name of the resource group. The name is case insensitive.
+// managedInstanceName - the name of the managed instance.
+func (client ManagedDatabasesClient) ListInaccessibleByInstance(ctx context.Context, resourceGroupName string, managedInstanceName string) (result ManagedDatabaseListResultPage, err error) {
+	if tracing.IsEnabled() {
+		ctx = tracing.StartSpan(ctx, fqdn+"/ManagedDatabasesClient.ListInaccessibleByInstance")
+		defer func() {
+			sc := -1
+			if result.mdlr.Response.Response != nil {
+				sc = result.mdlr.Response.Response.StatusCode
+			}
+			tracing.EndSpan(ctx, sc, err)
+		}()
+	}
+	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}}}); err != nil {
+		return result, validation.NewError("sql.ManagedDatabasesClient", "ListInaccessibleByInstance", err.Error())
+	}
+
+	result.fn = client.listInaccessibleByInstanceNextResults
+	req, err := client.ListInaccessibleByInstancePreparer(ctx, resourceGroupName, managedInstanceName)
+	if err != nil {
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "ListInaccessibleByInstance", nil, "Failure preparing request")
+		return
+	}
+
+	resp, err := client.ListInaccessibleByInstanceSender(req)
+	if err != nil {
+		result.mdlr.Response = autorest.Response{Response: resp}
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "ListInaccessibleByInstance", resp, "Failure sending request")
+		return
+	}
+
+	result.mdlr, err = client.ListInaccessibleByInstanceResponder(resp)
+	if err != nil {
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "ListInaccessibleByInstance", resp, "Failure responding to request")
+		return
+	}
+	if result.mdlr.hasNextLink() && result.mdlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
+	}
+
+	return
+}
+
+// ListInaccessibleByInstancePreparer prepares the ListInaccessibleByInstance request.
+func (client ManagedDatabasesClient) ListInaccessibleByInstancePreparer(ctx context.Context, resourceGroupName string, managedInstanceName string) (*http.Request, error) {
+	pathParameters := map[string]interface{}{
+		"managedInstanceName": autorest.Encode("path", managedInstanceName),
+		"resourceGroupName":   autorest.Encode("path", resourceGroupName),
+		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
+	}
+
+	const APIVersion = "2020-02-02-preview"
+	queryParameters := map[string]interface{}{
+		"api-version": APIVersion,
+	}
+
+	preparer := autorest.CreatePreparer(
+		autorest.AsGet(),
+		autorest.WithBaseURL(client.BaseURI),
+		autorest.WithPathParameters("/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Sql/managedInstances/{managedInstanceName}/inaccessibleManagedDatabases", pathParameters),
+		autorest.WithQueryParameters(queryParameters))
+	return preparer.Prepare((&http.Request{}).WithContext(ctx))
+}
+
+// ListInaccessibleByInstanceSender sends the ListInaccessibleByInstance request. The method will close the
+// http.Response Body if it receives an error.
+func (client ManagedDatabasesClient) ListInaccessibleByInstanceSender(req *http.Request) (*http.Response, error) {
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
+}
+
+// ListInaccessibleByInstanceResponder handles the response to the ListInaccessibleByInstance request. The method always
+// closes the http.Response Body.
+func (client ManagedDatabasesClient) ListInaccessibleByInstanceResponder(resp *http.Response) (result ManagedDatabaseListResult, err error) {
+	err = autorest.Respond(
+		resp,
+		azure.WithErrorUnlessStatusCode(http.StatusOK),
+		autorest.ByUnmarshallingJSON(&result),
+		autorest.ByClosing())
+	result.Response = autorest.Response{Response: resp}
+	return
+}
+
+// listInaccessibleByInstanceNextResults retrieves the next set of results, if any.
+func (client ManagedDatabasesClient) listInaccessibleByInstanceNextResults(ctx context.Context, lastResults ManagedDatabaseListResult) (result ManagedDatabaseListResult, err error) {
+	req, err := lastResults.managedDatabaseListResultPreparer(ctx)
+	if err != nil {
+		return result, autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "listInaccessibleByInstanceNextResults", nil, "Failure preparing next results request")
+	}
+	if req == nil {
+		return
+	}
+	resp, err := client.ListInaccessibleByInstanceSender(req)
+	if err != nil {
+		result.Response = autorest.Response{Response: resp}
+		return result, autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "listInaccessibleByInstanceNextResults", resp, "Failure sending next results request")
+	}
+	result, err = client.ListInaccessibleByInstanceResponder(resp)
+	if err != nil {
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "listInaccessibleByInstanceNextResults", resp, "Failure responding to next results request")
+	}
+	return
+}
+
+// ListInaccessibleByInstanceComplete enumerates all values, automatically crossing page boundaries as required.
+func (client ManagedDatabasesClient) ListInaccessibleByInstanceComplete(ctx context.Context, resourceGroupName string, managedInstanceName string) (result ManagedDatabaseListResultIterator, err error) {
+	if tracing.IsEnabled() {
+		ctx = tracing.StartSpan(ctx, fqdn+"/ManagedDatabasesClient.ListInaccessibleByInstance")
+		defer func() {
+			sc := -1
+			if result.Response().Response.Response != nil {
+				sc = result.page.Response().Response.Response.StatusCode
+			}
+			tracing.EndSpan(ctx, sc, err)
+		}()
+	}
+	result.page, err = client.ListInaccessibleByInstance(ctx, resourceGroupName, managedInstanceName)
+	return
+}
+
 // Update updates an existing database.
 // Parameters:
-// resourceGroupName - the name of the resource group that contains the resource. You can obtain this value
-// from the Azure Resource Manager API or the portal.
+// resourceGroupName - the name of the resource group. The name is case insensitive.
 // managedInstanceName - the name of the managed instance.
 // databaseName - the name of the database.
 // parameters - the requested database resource state.
@@ -507,6 +719,14 @@ func (client ManagedDatabasesClient) Update(ctx context.Context, resourceGroupNa
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
+	if err := validation.Validate([]validation.Validation{
+		{TargetValue: resourceGroupName,
+			Constraints: []validation.Constraint{{Target: "resourceGroupName", Name: validation.MaxLength, Rule: 90, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.MinLength, Rule: 1, Chain: nil},
+				{Target: "resourceGroupName", Name: validation.Pattern, Rule: `^[-\w\._\(\)]+$`, Chain: nil}}}}); err != nil {
+		return result, validation.NewError("sql.ManagedDatabasesClient", "Update", err.Error())
+	}
+
 	req, err := client.UpdatePreparer(ctx, resourceGroupName, managedInstanceName, databaseName, parameters)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Update", nil, "Failure preparing request")
@@ -515,7 +735,7 @@ func (client ManagedDatabasesClient) Update(ctx context.Context, resourceGroupNa
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -531,7 +751,7 @@ func (client ManagedDatabasesClient) UpdatePreparer(ctx context.Context, resourc
 		"subscriptionId":      autorest.Encode("path", client.SubscriptionID),
 	}
 
-	const APIVersion = "2018-06-01-preview"
+	const APIVersion = "2020-02-02-preview"
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
@@ -549,13 +769,38 @@ func (client ManagedDatabasesClient) UpdatePreparer(ctx context.Context, resourc
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedDatabasesClient) UpdateSender(req *http.Request) (future ManagedDatabasesUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedDatabasesClient) (md ManagedDatabase, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedDatabasesUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		md.Response.Response, err = future.GetResult(sender)
+		if md.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && md.Response.Response.StatusCode != http.StatusNoContent {
+			md, err = client.UpdateResponder(md.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedDatabasesUpdateFuture", "Result", md.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -564,7 +809,6 @@ func (client ManagedDatabasesClient) UpdateSender(req *http.Request) (future Man
 func (client ManagedDatabasesClient) UpdateResponder(resp *http.Response) (result ManagedDatabase, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

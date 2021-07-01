@@ -2,16 +2,21 @@ package gcp
 
 import (
 	"encoding/json"
+	"fmt"
 
 	gcpprovider "github.com/openshift/cluster-api-provider-gcp/pkg/apis/gcpprovider/v1beta1"
 
 	"github.com/openshift/installer/pkg/types"
 )
 
+const (
+	kmsKeyNameFmt = "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s"
+)
+
 // Auth is the collection of credentials that will be used by terrform.
 type Auth struct {
 	ProjectID      string `json:"gcp_project_id,omitempty"`
-	ServiceAccount string `json:"gcp_service_account,ompitempty"`
+	ServiceAccount string `json:"gcp_service_account,omitempty"`
 }
 
 type config struct {
@@ -21,8 +26,12 @@ type config struct {
 	MasterInstanceType      string   `json:"gcp_master_instance_type,omitempty"`
 	MasterAvailabilityZones []string `json:"gcp_master_availability_zones"`
 	ImageURI                string   `json:"gcp_image_uri,omitempty"`
+	Image                   string   `json:"gcp_image,omitempty"`
+	PreexistingImage        bool     `json:"gcp_preexisting_image"`
+	ImageLicenses           []string `json:"gcp_image_licenses,omitempty"`
 	VolumeType              string   `json:"gcp_master_root_volume_type"`
 	VolumeSize              int64    `json:"gcp_master_root_volume_size"`
+	VolumeKMSKeyLink        string   `json:"gcp_root_volume_kms_key_link"`
 	PublicZoneName          string   `json:"gcp_public_dns_zone_name,omitempty"`
 	PublishStrategy         string   `json:"gcp_publish_strategy,omitempty"`
 	PreexistingNetwork      bool     `json:"gcp_preexisting_network,omitempty"`
@@ -35,6 +44,7 @@ type config struct {
 type TFVarsSources struct {
 	Auth               Auth
 	ImageURI           string
+	ImageLicenses      []string
 	MasterConfigs      []*gcpprovider.GCPMachineProviderSpec
 	WorkerConfigs      []*gcpprovider.GCPMachineProviderSpec
 	PublicZoneName     string
@@ -50,6 +60,7 @@ func TFVars(sources TFVarsSources) ([]byte, error) {
 	for i, c := range sources.MasterConfigs {
 		masterAvailabilityZones[i] = c.Zone
 	}
+
 	cfg := &config{
 		Auth:                    sources.Auth,
 		Region:                  masterConfig.Region,
@@ -59,6 +70,8 @@ func TFVars(sources TFVarsSources) ([]byte, error) {
 		VolumeType:              masterConfig.Disks[0].Type,
 		VolumeSize:              masterConfig.Disks[0].SizeGb,
 		ImageURI:                sources.ImageURI,
+		Image:                   masterConfig.Disks[0].Image,
+		ImageLicenses:           sources.ImageLicenses,
 		PublicZoneName:          sources.PublicZoneName,
 		PublishStrategy:         string(sources.PublishStrategy),
 		ClusterNetwork:          masterConfig.NetworkInterfaces[0].Network,
@@ -66,6 +79,22 @@ func TFVars(sources TFVarsSources) ([]byte, error) {
 		ComputeSubnet:           workerConfig.NetworkInterfaces[0].Subnetwork,
 		PreexistingNetwork:      sources.PreexistingNetwork,
 	}
+	cfg.PreexistingImage = true
+	if len(sources.ImageLicenses) > 0 {
+		cfg.PreexistingImage = false
+	}
+
+	if masterConfig.Disks[0].EncryptionKey != nil {
+		cfg.VolumeKMSKeyLink = generateDiskEncryptionKeyLink(masterConfig.Disks[0].EncryptionKey, masterConfig.ProjectID)
+	}
 
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+func generateDiskEncryptionKeyLink(keyRef *gcpprovider.GCPEncryptionKeyReference, projectID string) string {
+	if keyRef.KMSKey.ProjectID != "" {
+		projectID = keyRef.KMSKey.ProjectID
+	}
+
+	return fmt.Sprintf(kmsKeyNameFmt, projectID, keyRef.KMSKey.Location, keyRef.KMSKey.KeyRing, keyRef.KMSKey.Name)
 }

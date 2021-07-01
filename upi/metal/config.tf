@@ -132,13 +132,13 @@ EOF
 
 }
 
-variable "pxe_os_image_url" {
-  type = string
+variable "pxe_kernel_args" {
+  type    = string
+  default = ""
 
   description = <<EOF
-URL to the OS image for RHCOS that should be installed on machines.
-
-For more info: https://github.com/coreos/coreos-installer#kernel-command-line-options-for-coreos-installer-running-in-the-initramfs
+Arbitrary kernel arguments, space delimited ie:
+coreos.inst.image_url=http://example.com/image.gz coreos.color=blue
 EOF
 
 }
@@ -172,6 +172,36 @@ variable "packet_project_id" {
 
   description = <<EOF
 The Project ID for Packet.net where servers will be deployed.
+EOF
+
+}
+
+variable "packet_plan" {
+  type    = string
+  default = "c1.small.x86"
+
+  description = <<EOF
+The Packet.Net device plan slug.
+EOF
+
+}
+
+variable "packet_facility" {
+  type    = string
+  default = "any"
+
+  description = <<EOF
+The Packet.Net facilities code to be used.
+EOF
+
+}
+
+variable "packet_hardware_reservation_id" {
+  type    = string
+  default = ""
+
+  description = <<EOF
+The UUID of the hardware reservation where you want this device deployed on Packet.net.
 EOF
 
 }

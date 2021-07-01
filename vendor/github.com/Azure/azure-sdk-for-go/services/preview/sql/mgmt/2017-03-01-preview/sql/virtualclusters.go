@@ -37,7 +37,8 @@ func NewVirtualClustersClient(subscriptionID string) VirtualClustersClient {
 	return NewVirtualClustersClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVirtualClustersClientWithBaseURI creates an instance of the VirtualClustersClient client.
+// NewVirtualClustersClientWithBaseURI creates an instance of the VirtualClustersClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewVirtualClustersClientWithBaseURI(baseURI string, subscriptionID string) VirtualClustersClient {
 	return VirtualClustersClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -66,7 +67,7 @@ func (client VirtualClustersClient) Delete(ctx context.Context, resourceGroupNam
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -97,13 +98,28 @@ func (client VirtualClustersClient) DeletePreparer(ctx context.Context, resource
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualClustersClient) DeleteSender(req *http.Request) (future VirtualClustersDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client VirtualClustersClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.VirtualClustersDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.VirtualClustersDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -112,7 +128,6 @@ func (client VirtualClustersClient) DeleteSender(req *http.Request) (future Virt
 func (client VirtualClustersClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -151,6 +166,7 @@ func (client VirtualClustersClient) Get(ctx context.Context, resourceGroupName s
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -180,8 +196,7 @@ func (client VirtualClustersClient) GetPreparer(ctx context.Context, resourceGro
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualClustersClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -189,7 +204,6 @@ func (client VirtualClustersClient) GetSender(req *http.Request) (*http.Response
 func (client VirtualClustersClient) GetResponder(resp *http.Response) (result VirtualCluster, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -226,6 +240,11 @@ func (client VirtualClustersClient) List(ctx context.Context) (result VirtualClu
 	result.vclr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.vclr.hasNextLink() && result.vclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -253,8 +272,7 @@ func (client VirtualClustersClient) ListPreparer(ctx context.Context) (*http.Req
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualClustersClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -262,7 +280,6 @@ func (client VirtualClustersClient) ListSender(req *http.Request) (*http.Respons
 func (client VirtualClustersClient) ListResponder(resp *http.Response) (result VirtualClusterListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -339,6 +356,11 @@ func (client VirtualClustersClient) ListByResourceGroup(ctx context.Context, res
 	result.vclr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.vclr.hasNextLink() && result.vclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -367,8 +389,7 @@ func (client VirtualClustersClient) ListByResourceGroupPreparer(ctx context.Cont
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualClustersClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -376,7 +397,6 @@ func (client VirtualClustersClient) ListByResourceGroupSender(req *http.Request)
 func (client VirtualClustersClient) ListByResourceGroupResponder(resp *http.Response) (result VirtualClusterListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -446,7 +466,7 @@ func (client VirtualClustersClient) Update(ctx context.Context, resourceGroupNam
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.VirtualClustersClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -479,13 +499,38 @@ func (client VirtualClustersClient) UpdatePreparer(ctx context.Context, resource
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualClustersClient) UpdateSender(req *http.Request) (future VirtualClustersUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client VirtualClustersClient) (vc VirtualCluster, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.VirtualClustersUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.VirtualClustersUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		vc.Response.Response, err = future.GetResult(sender)
+		if vc.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.VirtualClustersUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && vc.Response.Response.StatusCode != http.StatusNoContent {
+			vc, err = client.UpdateResponder(vc.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.VirtualClustersUpdateFuture", "Result", vc.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -494,7 +539,6 @@ func (client VirtualClustersClient) UpdateSender(req *http.Request) (future Virt
 func (client VirtualClustersClient) UpdateResponder(resp *http.Response) (result VirtualCluster, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -14,12 +14,12 @@ variable "master_count" {
 
 variable "ovirt_cluster_id" {
   type        = string
-  description = "The ID of oVirt's cluster"
+  description = "The ID of Cluster"
 }
 
 variable "ovirt_template_id" {
   type        = string
-  description = "The ID of oVirt's VM template"
+  description = "The ID of VM template"
 }
 
 variable "ignition_master" {
@@ -55,4 +55,15 @@ variable "ovirt_master_vm_type" {
 variable "ovirt_master_instance_type_id" {
   type        = string
   description = "master VM instance type ID"
+}
+
+variable "ovirt_master_affinity_groups" {
+  type        = list(string)
+  description = "master VMs affinity groups names"
+}
+
+//TODO: REMOVE once we port to TF 0.13 and can use depends_on modules
+variable "ovirt_affinity_group_count" {
+  type        = string
+  description = "create a dependency between affinity_group module to masters module"
 }

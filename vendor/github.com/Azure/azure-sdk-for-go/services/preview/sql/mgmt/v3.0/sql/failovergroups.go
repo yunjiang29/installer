@@ -38,7 +38,8 @@ func NewFailoverGroupsClient(subscriptionID string) FailoverGroupsClient {
 	return NewFailoverGroupsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewFailoverGroupsClientWithBaseURI creates an instance of the FailoverGroupsClient client.
+// NewFailoverGroupsClientWithBaseURI creates an instance of the FailoverGroupsClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewFailoverGroupsClientWithBaseURI(baseURI string, subscriptionID string) FailoverGroupsClient {
 	return FailoverGroupsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -78,7 +79,7 @@ func (client FailoverGroupsClient) CreateOrUpdate(ctx context.Context, resourceG
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -113,13 +114,38 @@ func (client FailoverGroupsClient) CreateOrUpdatePreparer(ctx context.Context, r
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) CreateOrUpdateSender(req *http.Request) (future FailoverGroupsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client FailoverGroupsClient) (fg FailoverGroup, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.FailoverGroupsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		fg.Response.Response, err = future.GetResult(sender)
+		if fg.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && fg.Response.Response.StatusCode != http.StatusNoContent {
+			fg, err = client.CreateOrUpdateResponder(fg.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.FailoverGroupsCreateOrUpdateFuture", "Result", fg.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -128,7 +154,6 @@ func (client FailoverGroupsClient) CreateOrUpdateSender(req *http.Request) (futu
 func (client FailoverGroupsClient) CreateOrUpdateResponder(resp *http.Response) (result FailoverGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -161,7 +186,7 @@ func (client FailoverGroupsClient) Delete(ctx context.Context, resourceGroupName
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -193,13 +218,28 @@ func (client FailoverGroupsClient) DeletePreparer(ctx context.Context, resourceG
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) DeleteSender(req *http.Request) (future FailoverGroupsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client FailoverGroupsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.FailoverGroupsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -208,7 +248,6 @@ func (client FailoverGroupsClient) DeleteSender(req *http.Request) (future Failo
 func (client FailoverGroupsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -240,7 +279,7 @@ func (client FailoverGroupsClient) Failover(ctx context.Context, resourceGroupNa
 
 	result, err = client.FailoverSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Failover", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Failover", nil, "Failure sending request")
 		return
 	}
 
@@ -272,13 +311,38 @@ func (client FailoverGroupsClient) FailoverPreparer(ctx context.Context, resourc
 // FailoverSender sends the Failover request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) FailoverSender(req *http.Request) (future FailoverGroupsFailoverFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client FailoverGroupsClient) (fg FailoverGroup, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsFailoverFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.FailoverGroupsFailoverFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		fg.Response.Response, err = future.GetResult(sender)
+		if fg.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsFailoverFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && fg.Response.Response.StatusCode != http.StatusNoContent {
+			fg, err = client.FailoverResponder(fg.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.FailoverGroupsFailoverFuture", "Result", fg.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -287,7 +351,6 @@ func (client FailoverGroupsClient) FailoverSender(req *http.Request) (future Fai
 func (client FailoverGroupsClient) FailoverResponder(resp *http.Response) (result FailoverGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -321,7 +384,7 @@ func (client FailoverGroupsClient) ForceFailoverAllowDataLoss(ctx context.Contex
 
 	result, err = client.ForceFailoverAllowDataLossSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "ForceFailoverAllowDataLoss", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "ForceFailoverAllowDataLoss", nil, "Failure sending request")
 		return
 	}
 
@@ -353,13 +416,38 @@ func (client FailoverGroupsClient) ForceFailoverAllowDataLossPreparer(ctx contex
 // ForceFailoverAllowDataLossSender sends the ForceFailoverAllowDataLoss request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) ForceFailoverAllowDataLossSender(req *http.Request) (future FailoverGroupsForceFailoverAllowDataLossFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client FailoverGroupsClient) (fg FailoverGroup, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsForceFailoverAllowDataLossFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.FailoverGroupsForceFailoverAllowDataLossFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		fg.Response.Response, err = future.GetResult(sender)
+		if fg.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsForceFailoverAllowDataLossFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && fg.Response.Response.StatusCode != http.StatusNoContent {
+			fg, err = client.ForceFailoverAllowDataLossResponder(fg.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.FailoverGroupsForceFailoverAllowDataLossFuture", "Result", fg.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -368,7 +456,6 @@ func (client FailoverGroupsClient) ForceFailoverAllowDataLossSender(req *http.Re
 func (client FailoverGroupsClient) ForceFailoverAllowDataLossResponder(resp *http.Response) (result FailoverGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -409,6 +496,7 @@ func (client FailoverGroupsClient) Get(ctx context.Context, resourceGroupName st
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -439,8 +527,7 @@ func (client FailoverGroupsClient) GetPreparer(ctx context.Context, resourceGrou
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -448,7 +535,6 @@ func (client FailoverGroupsClient) GetSender(req *http.Request) (*http.Response,
 func (client FailoverGroupsClient) GetResponder(resp *http.Response) (result FailoverGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -489,6 +575,11 @@ func (client FailoverGroupsClient) ListByServer(ctx context.Context, resourceGro
 	result.fglr, err = client.ListByServerResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "ListByServer", resp, "Failure responding to request")
+		return
+	}
+	if result.fglr.hasNextLink() && result.fglr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -518,8 +609,7 @@ func (client FailoverGroupsClient) ListByServerPreparer(ctx context.Context, res
 // ListByServerSender sends the ListByServer request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) ListByServerSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByServerResponder handles the response to the ListByServer request. The method always
@@ -527,7 +617,6 @@ func (client FailoverGroupsClient) ListByServerSender(req *http.Request) (*http.
 func (client FailoverGroupsClient) ListByServerResponder(resp *http.Response) (result FailoverGroupListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -598,7 +687,7 @@ func (client FailoverGroupsClient) Update(ctx context.Context, resourceGroupName
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.FailoverGroupsClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -632,13 +721,38 @@ func (client FailoverGroupsClient) UpdatePreparer(ctx context.Context, resourceG
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client FailoverGroupsClient) UpdateSender(req *http.Request) (future FailoverGroupsUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client FailoverGroupsClient) (fg FailoverGroup, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.FailoverGroupsUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		fg.Response.Response, err = future.GetResult(sender)
+		if fg.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.FailoverGroupsUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && fg.Response.Response.StatusCode != http.StatusNoContent {
+			fg, err = client.UpdateResponder(fg.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.FailoverGroupsUpdateFuture", "Result", fg.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -647,7 +761,6 @@ func (client FailoverGroupsClient) UpdateSender(req *http.Request) (future Failo
 func (client FailoverGroupsClient) UpdateResponder(resp *http.Response) (result FailoverGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -34,6 +34,7 @@ resource "libvirt_volume" "master" {
   name           = "${var.cluster_id}-master-${count.index}"
   base_volume_id = module.volume.coreos_base_volume_id
   pool           = libvirt_pool.storage_pool.name
+  size           = var.libvirt_master_size
 }
 
 resource "libvirt_ignition" "master" {
@@ -68,6 +69,19 @@ resource "libvirt_network" "net" {
       }
     }
   }
+
+  dnsmasq_options {
+    dynamic "options" {
+      for_each = concat(
+        data.libvirt_network_dnsmasq_options_template.options.*.rendered,
+      )
+      content {
+        option_name  = options.value.option_name
+        option_value = options.value.option_value
+      }
+    }
+  }
+
 
   autostart = true
 }
@@ -124,5 +138,11 @@ data "libvirt_network_dns_host_template" "masters_int" {
   count    = var.master_count
   ip       = var.libvirt_master_ips[count.index]
   hostname = "api-int.${var.cluster_domain}"
+}
+
+data "libvirt_network_dnsmasq_options_template" "options" {
+  count        = length(var.libvirt_dnsmasq_options)
+  option_name  = var.libvirt_dnsmasq_options[count.index]["option_name"]
+  option_value = var.libvirt_dnsmasq_options[count.index]["option_value"]
 }
 

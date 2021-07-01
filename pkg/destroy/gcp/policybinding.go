@@ -34,12 +34,12 @@ func (o *ClusterUninstaller) setProjectIAMPolicy(policy *resourcemanager.Policy)
 	return nil
 }
 
-func clearIAMPolicyBindings(policy *resourcemanager.Policy, emails sets.String, logger logrus.FieldLogger) bool {
+func (o *ClusterUninstaller) clearIAMPolicyBindings(policy *resourcemanager.Policy, emails sets.String, logger logrus.FieldLogger) bool {
 	removedBindings := false
 	for _, binding := range policy.Bindings {
 		members := []string{}
 		for _, member := range binding.Members {
-			email := strings.TrimPrefix(strings.TrimPrefix(member, "deleted:"), "serviceAccount:")
+			email := policyMemberToEmail(member)
 			if emails.Has(email) {
 				logger.Debugf("IAM: removing %s from role %s", member, binding.Role)
 				removedBindings = true
@@ -52,29 +52,13 @@ func clearIAMPolicyBindings(policy *resourcemanager.Policy, emails sets.String, 
 	return removedBindings
 }
 
-// destroyIAMPolicyBindings removes any role bindings from the project policy to
-// service accounts that start with the cluster's infra ID.
-func (o *ClusterUninstaller) destroyIAMPolicyBindings() error {
-	policy, err := o.getProjectIAMPolicy()
-	if err != nil {
-		return err
+// policyMemberToEmail takes member of IAM policy binding and converts it to service account email.
+// https://cloud.google.com/iam/docs/reference/rest/v1/Policy#Binding
+// see members[]
+func policyMemberToEmail(member string) string {
+	email := strings.TrimPrefix(strings.TrimPrefix(member, "deleted:"), "serviceAccount:")
+	if idx := strings.Index(email, "?uid"); idx != -1 {
+		email = email[:idx]
 	}
-
-	sas := o.getPendingItems("serviceaccount_binding")
-	emails := sets.NewString()
-	for _, item := range sas {
-		emails.Insert(item.url)
-	}
-
-	if !clearIAMPolicyBindings(policy, emails, o.Logger) {
-		pendingPolicy := o.getPendingItems("iampolicy")
-		if len(pendingPolicy) > 0 {
-			o.Logger.Infof("Deleted IAM project role bindings")
-			o.deletePendingItems("iampolicy", pendingPolicy)
-		}
-		return nil
-	}
-	o.insertPendingItems("iampolicy", []cloudResource{{key: "policy", name: "policy", typeName: "iampolicy"}})
-	err = o.setProjectIAMPolicy(policy)
-	return aggregateError([]error{err}, 1)
+	return email
 }

@@ -4,31 +4,36 @@ Beyond the [platform-agnostic `install-config.yaml` properties](../customization
 
 ## Table of Contents
 
-* [Cluster-scoped properties](#cluster-scoped-properties)
-* [Machine pools](#machine-pools)
-* [Examples](#examples)
-  * [Minimal](#minimal)
-  * [Custom-machine-pools](#custom-machine-pools)
-* [Image Overrides](#image-overrides)
-* [Additional Networks](#additional-networks)
-* [Additional Security Groups](#additional-security-groups)
-* [Further customization](#further-customization)
+- [OpenStack Platform Customization](#openstack-platform-customization)
+  - [Table of Contents](#table-of-contents)
+  - [Cluster-scoped properties](#cluster-scoped-properties)
+  - [Machine pools](#machine-pools)
+  - [Examples](#examples)
+    - [Minimal](#minimal)
+    - [Custom machine pools](#custom-machine-pools)
+  - [Image Overrides](#image-overrides)
+  - [Custom Subnets](#custom-subnets)
+  - [Additional Networks](#additional-networks)
+  - [Additional Security Groups](#additional-security-groups)
+  - [Further customization](#further-customization)
 
 ## Cluster-scoped properties
 
 * `cloud` (required string): The name of the OpenStack cloud to use from `clouds.yaml`.
-* `computeFlavor` (required string): The OpenStack flavor to use for compute and control-plane machines.
-    This is currently required, but has lower precedence than [the `type` property](#machine-pools) on [the `compute` and `controlPlane` machine-pools](../customization.md#platform-customization).
-* `externalDNS` (optional list of strings): The IP addresses of DNS servers to be used for the DNS resolution of all instances in the cluster
-* `externalNetwork` (required string): The OpenStack external network name to be used for installation.
-* `lbFloatingIP` (required string): Existing Floating IP to associate with the API load balancer.
-* `octaviaSupport` (optional string): Whether OpenStack supports Octavia (`1` for true or `0` for false)
+* `computeFlavor` (deprecated string): The OpenStack flavor to use for compute and control-plane machines.
+* `externalDNS` (optional list of strings): The IP addresses of DNS servers to be used for the DNS resolution of all instances in the cluster. The total number of dns servers supported by an instance is three. That total includes any dns server provided by the underlying openstack infrastructure.
+* `externalNetwork` (optional string): Name of external network the installer will use to provide access to the cluster. If defined, a floating IP from this network will be created and associated with the bootstrap node to facilitate debugging and connection to the bootstrap node during installation. The `apiFloatingIP` property is a floating IP address selected from this network.
+* `apiFloatingIP` (optional string): Address of existing Floating IP from externalNetwork the installer will associate with the OpenShift API. This property is only valid if externalNetwork is defined. If externalNetwork is not defined, the installer will throw an error.
+* `ingressFloatingIP` (optional string): Address of an existing Floating IP from externalNetwork the installer will associate with the ingress port. This property is only valid if externalNetwork is defined. If externalNetwork is not defined, the installer will throw an error.
+* `octaviaSupport` (deprecated string): Whether OpenStack supports Octavia (`1` for true or `0` for false)
 * `region` (deprecated string): The OpenStack region where the cluster will be created. Currently this value is not used by the installer.
-* `trunkSupport` (optional string): Whether OpenStack ports can be trunked (`1` for true or `0` for false)
+* `trunkSupport` (deprecated string): Whether OpenStack ports can be trunked (`1` for true or `0` for false)
 * `clusterOSImage` (optional string): Either a URL with `http(s)` or `file` scheme to override the default OS image for cluster nodes or an existing Glance image name.
-* `apiVIP` (optional string): An IP addresss on the machineNetwork that will be assigned to the API VIP. Be aware that the `10` and `11` of the machineNetwork will be taken by neutron dhcp by default, and wont be available.
+* `clusterOSImageProperties` (optional list of strings): a list of properties to be added to the installer-uploaded ClusterOSImage in Glance. The default is to not set any properties. `clusterOSImageProperties` is ignored when `clusterOSImage` points to an existing image in Glance.
+* `apiVIP` (optional string): An IP address on the machineNetwork that will be assigned to the API VIP. Be aware that the `10` and `11` of the machineNetwork will be taken by neutron dhcp by default, and wont be available.
 * `ingressVIP` (optional string): An IP address on the machineNetwork that will be assigned to the ingress VIP. Be aware that the `10` and `11` of the machineNetwork will be taken by neutron dhcp by default, and wont be available.
-* `machinesSubnet` (optional string): the UUID of an openstack subnet to install the nodes of the cluster onto. The first CIDR in `networks.machineNetwork` must match the cidr of the `machinesSubnet`. In order to support more complex networking configurations, we expect the subnet passed to already be connected to an external network in some way. When this option is set, we will no longer attempt to create a router. Also note that setting `externalDNS` while setting `machinesSubnet` is invalid usage. If you want to add a DNS to your cluster while using a custom subnet, add it to the subnet in openstack [like this](https://docs.openstack.org/neutron/rocky/admin/config-dns-res.html). 
+* `machinesSubnet` (optional string): the UUID of an OpenStack subnet to install the nodes of the cluster onto. For more information on how to install with a custom subnet, see the [custom subnets](#custom-subnets) section of the docs.
+* `defaultMachinePlatform` (optional object): Default [OpenStack-specific machine pool properties](#machine-pools) which apply to [machine pools](../customization.md#machine-pools) that do not define their own OpenStack-specific properties.
 
 ## Machine pools
 
@@ -36,10 +41,15 @@ Beyond the [platform-agnostic `install-config.yaml` properties](../customization
 * `additionalSecurityGroupIDs` (optional list of strings): IDs of additional security groups for machines.
 * `type` (optional string): The OpenStack flavor name for machines in the pool.
 * `rootVolume` (optional object): Defines the root volume for instances in the machine pool. The instances use ephemeral disks if not set.
-  * `size` (required integer): Size of the root volume in GB.
+  * `size` (required integer): Size of the root volume in GB. Must be set to at least 25.
   * `type` (required string): The volume pool to create the volume from.
+  * `zones` (optional list of strings): The names of the availability zones you want to install your root volumes on. If unset, the installer will use your default volume zone.
+* `zones` (optional list of strings): The names of the availability zones you want to install your nodes on. If unset, the installer will use your default compute zone.
 
-**NOTE:** The bootstrap node follows the `type` and `rootVolume` parameters from the `controlPlane` machine pool.
+**NOTE:** The bootstrap node follows the `type`, `rootVolume`, `additionalNetworkIDs`, and `additionalSecurityGroupIDs` parameters from the `controlPlane` machine pool.
+
+**NOTE:** Note when deploying with `Kuryr` there is an Octavia API loadbalancer VM that will not fulfill the Availability Zones restrictions due to Octavia lack of support for it. In addition, if Octavia only has the amphora provider instead of also the OVN-Octavia provider, all the OpenShift services will be backed up by Octavia Load Balancer VMs which will not fulfill the Availability Zone restrictions either.
+
 
 ## Examples
 
@@ -57,13 +67,14 @@ metadata:
   name: test-cluster
 platform:
   openstack:
+    apiFloatingIP: 128.0.0.1
     cloud: mycloud
-    computeFlavor: m1.s2.xlarge
+    defaultMachinePlatform:
+      type: m1.s2.xlarge
     externalNetwork: external
     externalDNS:
       - "8.8.8.8"
       - "192.168.1.12"
-    lbFloatingIP: 128.0.0.1
 pullSecret: '{"auths": ...}'
 sshKey: ssh-ed25519 AAAA...
 ```
@@ -91,23 +102,29 @@ metadata:
   name: test-cluster
 platform:
   openstack:
+    apiFloatingIP: 128.0.0.1
     cloud: mycloud
-    computeFlavor: m1.s2.xlarge
+    defaultMachinePlatform:
+      type: m1.s2.xlarge
     externalNetwork: external
-    lbFloatingIP: 128.0.0.1
 pullSecret: '{"auths": ...}'
 sshKey: ssh-ed25519 AAAA...
 ```
 
 ## Image Overrides
 
-Normally the installer downloads the RHCOS image from a predetermined location described in [data/data/rhcos.json](/data/data/rhcos.json)). But the download URL can be overridden, notably for disconnected installations.
+The OpenShift installer pins the version of RHEL CoreOS and normally handles uploading the image to the target OpenStack instance.
 
-To do so and upload binary data from a custom location the user may set `clusterOSImage` parameter in the install config that points to that location, and then start the installation. In all other respects the process will be consistent with the default.
+If you want to download the image manually, see [CoreOS bootimages](../overview.md#coreos-bootimages) for more information
+about bootimages.  This is useful, for example, to perform a disconnected installation.  To do this,
+download the `qcow2` and host it at a custom location.  Then set the `openstack.clusterOSImage`
+parameter field in the install config to point to that location.   The install process will
+then use that mirrored image.
+In all other respects the process will be consistent with the default.
 
 **NOTE:** For this to work, the parameter value must be a valid http(s) URL.
 
-**NOTE:** The optional `sha256` query parameter can be attached to the URL, which will force the installer to check the image file checksum before uploading it into Glance.
+**NOTE:** The optional `sha256` query parameter can be attached to the URL. This will force the installer to check the uncompressed image file checksum before uploading it into Glance.
 
 Example:
 
@@ -136,6 +153,21 @@ platform:
   openstack:
       clusterOSImage: my-rhcos
 ```
+
+## Custom Subnets
+
+In the `install-config.yaml` file, the value of the `machinesSubnet` property is the subnet where the Kubernetes endpoints of the nodes in your cluster are published. The Ingress and API ports are created on this subnet, too. By default, the installer creates a network and subnet for these endpoints and ports. Alternatively, you can use a subnet of your own by setting the value of the `machinesSubnet` property to the UUID of an existing OpenStack subnet. To use this feature, you need to meet these requirements:
+
+* The subnet that is used by `machinesSubnet` has DHCP enabled.
+* The CIDR of `machinesSubnet` matches the CIDR of `networks.machineNetwork`.
+* The installer user must have permission to create ports on this network, including ports with fixed IP addresses.
+
+You should also be aware of the following limitations:
+
+* If you plan to install a cluster that uses floating IPs, the `machinesSubnet` must be attached to a router that is connected to the `externalNetwork`.
+* The installer will not create a private network or subnet for your OpenShift machines if the `machinesSubnet` is set in the `install-config.yaml`.
+* By default, the API and Ingress VIPs use the .5 and .7 of your network CIDR. To prevent other services from taking the ports that are assigned to the API and Ingress VIPs, set the `apiVIP` and `ingressVIP` options in the `install-config.yaml` to addresses that are outside of the DHCP allocation pool.
+* You cannot use the `externalDNS` property at the same time as a custom `machinesSubnet`. If you want to add a DNS to your cluster while using a custom subnet, [add it to the subnet in OpenStack](https://docs.openstack.org/neutron/rocky/admin/config-dns-res.html).
 
 ## Additional Networks
 
@@ -166,7 +198,9 @@ controlPlane:
       - fa806b2f-ac49-4bce-b9db-124bc64209bf
 ```
 
-**NOTE:** Allowed address pairs won't be created for the additional networks.
+**NOTES:**
+* Allowed address pairs won't be created for the additional networks.
+* The additional networks attached to the Control Plane machine will also be attached to the bootstrap node.
 
 ## Additional Security Groups
 
@@ -196,6 +230,8 @@ controlPlane:
       additionalSecurityGroupIDs:
       - 7ee219f3-d2e9-48a1-96c2-e7429f1b0da7
 ```
+
+**NOTE:** The additional security groups attached to the Control Plane machine will also be attached to the bootstrap node.
 
 ## Further customization
 

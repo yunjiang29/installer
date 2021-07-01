@@ -38,7 +38,8 @@ func NewInstancePoolsClient(subscriptionID string) InstancePoolsClient {
 	return NewInstancePoolsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewInstancePoolsClientWithBaseURI creates an instance of the InstancePoolsClient client.
+// NewInstancePoolsClientWithBaseURI creates an instance of the InstancePoolsClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewInstancePoolsClientWithBaseURI(baseURI string, subscriptionID string) InstancePoolsClient {
 	return InstancePoolsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -79,7 +80,7 @@ func (client InstancePoolsClient) CreateOrUpdate(ctx context.Context, resourceGr
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -112,13 +113,38 @@ func (client InstancePoolsClient) CreateOrUpdatePreparer(ctx context.Context, re
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client InstancePoolsClient) CreateOrUpdateSender(req *http.Request) (future InstancePoolsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InstancePoolsClient) (IP InstancePool, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.InstancePoolsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.InstancePoolsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		IP.Response.Response, err = future.GetResult(sender)
+		if IP.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.InstancePoolsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && IP.Response.Response.StatusCode != http.StatusNoContent {
+			IP, err = client.CreateOrUpdateResponder(IP.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.InstancePoolsCreateOrUpdateFuture", "Result", IP.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -127,7 +153,6 @@ func (client InstancePoolsClient) CreateOrUpdateSender(req *http.Request) (futur
 func (client InstancePoolsClient) CreateOrUpdateResponder(resp *http.Response) (result InstancePool, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -159,7 +184,7 @@ func (client InstancePoolsClient) Delete(ctx context.Context, resourceGroupName 
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -190,13 +215,28 @@ func (client InstancePoolsClient) DeletePreparer(ctx context.Context, resourceGr
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client InstancePoolsClient) DeleteSender(req *http.Request) (future InstancePoolsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InstancePoolsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.InstancePoolsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.InstancePoolsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -205,7 +245,6 @@ func (client InstancePoolsClient) DeleteSender(req *http.Request) (future Instan
 func (client InstancePoolsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -244,6 +283,7 @@ func (client InstancePoolsClient) Get(ctx context.Context, resourceGroupName str
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -273,8 +313,7 @@ func (client InstancePoolsClient) GetPreparer(ctx context.Context, resourceGroup
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client InstancePoolsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -282,7 +321,6 @@ func (client InstancePoolsClient) GetSender(req *http.Request) (*http.Response, 
 func (client InstancePoolsClient) GetResponder(resp *http.Response) (result InstancePool, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -319,6 +357,11 @@ func (client InstancePoolsClient) List(ctx context.Context) (result InstancePool
 	result.iplr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.iplr.hasNextLink() && result.iplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -346,8 +389,7 @@ func (client InstancePoolsClient) ListPreparer(ctx context.Context) (*http.Reque
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client InstancePoolsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -355,7 +397,6 @@ func (client InstancePoolsClient) ListSender(req *http.Request) (*http.Response,
 func (client InstancePoolsClient) ListResponder(resp *http.Response) (result InstancePoolListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -432,6 +473,11 @@ func (client InstancePoolsClient) ListByResourceGroup(ctx context.Context, resou
 	result.iplr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.iplr.hasNextLink() && result.iplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -460,8 +506,7 @@ func (client InstancePoolsClient) ListByResourceGroupPreparer(ctx context.Contex
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client InstancePoolsClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -469,7 +514,6 @@ func (client InstancePoolsClient) ListByResourceGroupSender(req *http.Request) (
 func (client InstancePoolsClient) ListByResourceGroupResponder(resp *http.Response) (result InstancePoolListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -539,7 +583,7 @@ func (client InstancePoolsClient) Update(ctx context.Context, resourceGroupName 
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.InstancePoolsClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -572,13 +616,38 @@ func (client InstancePoolsClient) UpdatePreparer(ctx context.Context, resourceGr
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client InstancePoolsClient) UpdateSender(req *http.Request) (future InstancePoolsUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InstancePoolsClient) (IP InstancePool, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.InstancePoolsUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.InstancePoolsUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		IP.Response.Response, err = future.GetResult(sender)
+		if IP.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.InstancePoolsUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && IP.Response.Response.StatusCode != http.StatusNoContent {
+			IP, err = client.UpdateResponder(IP.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.InstancePoolsUpdateFuture", "Result", IP.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -587,7 +656,6 @@ func (client InstancePoolsClient) UpdateSender(req *http.Request) (future Instan
 func (client InstancePoolsClient) UpdateResponder(resp *http.Response) (result InstancePool, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

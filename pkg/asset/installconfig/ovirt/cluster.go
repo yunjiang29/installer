@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/core"
 	ovirtsdk4 "github.com/ovirt/go-ovirt"
-	"gopkg.in/AlecAivazis/survey.v1"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/openshift/installer/pkg/types/ovirt"
 )
@@ -15,27 +18,36 @@ func askCluster(c *ovirtsdk4.Connection, p *ovirt.Platform) (string, error) {
 	var clusterByNames = make(map[string]*ovirtsdk4.Cluster)
 	var clusterNames []string
 	systemService := c.SystemService()
-	response, err := systemService.ClustersService().List().Send()
+
+	dcResp, err := datacentersAvailable(c, "")
 	if err != nil {
 		return "", err
 	}
-	clusters, ok := response.Clusters()
-	if !ok {
-		return "", fmt.Errorf("there are no available clusters")
-	}
 
-	for _, cluster := range clusters.Slice() {
-		clusterByNames[cluster.MustName()] = cluster
-		clusterNames = append(clusterNames, cluster.MustName())
+	datacenters := dcResp.MustDataCenters()
+	for _, dc := range datacenters.Slice() {
+		dcService := systemService.DataCentersService().DataCenterService(dc.MustId())
+		logrus.Debug("Datacenter:", dc.MustName())
+		clusters, err := dcService.ClustersService().List().Send()
+		if err != nil {
+			return "", errors.Wrap(err, "failed to list clusters")
+		}
+		clusterSlice := clusters.MustClusters()
+		for _, cluster := range clusterSlice.Slice() {
+			logrus.Debug("\tcluster:", cluster.MustName())
+			clusterByNames[cluster.MustName()] = cluster
+			clusterNames = append(clusterNames, cluster.MustName())
+		}
 	}
-	err = survey.AskOne(&survey.Select{
-		Message: "oVirt cluster",
-		Help:    "The oVirt cluster where the VMs will be created.",
-		Options: clusterNames,
-	},
+	if err := survey.AskOne(
+		&survey.Select{
+			Message: "Cluster",
+			Help:    "The Cluster where the VMs will be created.",
+			Options: clusterNames,
+		},
 		&clusterName,
-		func(ans interface{}) error {
-			choice := ans.(string)
+		survey.WithValidator(func(ans interface{}) error {
+			choice := ans.(core.OptionAnswer).Value
 			sort.Strings(clusterNames)
 			i := sort.SearchStrings(clusterNames, choice)
 			if i == len(clusterNames) || clusterNames[i] != choice {
@@ -47,6 +59,9 @@ func askCluster(c *ovirtsdk4.Connection, p *ovirt.Platform) (string, error) {
 			}
 			p.ClusterID = cl.MustId()
 			return nil
-		})
-	return clusterName, err
+		}),
+	); err != nil {
+		return clusterName, errors.Wrap(err, "failed UserInput")
+	}
+	return clusterName, nil
 }

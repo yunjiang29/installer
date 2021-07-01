@@ -8,6 +8,11 @@ EOF
   default = "0.1"
 }
 
+variable "azure_environment" {
+  type = string
+  description = "The target Azure cloud environment for the cluster."
+}
+
 variable "azure_region" {
   type = string
   description = "The target Azure region for the cluster."
@@ -33,7 +38,7 @@ Example: `{ "key" = "value", "foo" = "bar" }`
 EOF
 
 
-default = {}
+  default = {}
 }
 
 variable "azure_master_root_volume_type" {
@@ -87,32 +92,45 @@ variable "azure_preexisting_network" {
   description = "Specifies whether an existing network should be used or a new one created for installation."
 }
 
-variable "azure_network_resource_group_name" {
+variable "azure_resource_group_name" {
   type        = string
+  description = <<EOF
+The name of the resource group for the cluster. If this is set, the cluster is installed to that existing resource group
+otherwise a new resource group will be created using cluster id.
+EOF
+}
+
+variable "azure_network_resource_group_name" {
+  type = string
   description = "The name of the network resource group, either existing or to be created."
 }
 
 variable "azure_virtual_network" {
-  type        = string
+  type = string
   description = "The name of the virtual network, either existing or to be created."
 }
 
 variable "azure_control_plane_subnet" {
-  type        = string
+  type = string
   description = "The name of the subnet for the control plane, either existing or to be created."
 }
 
 variable "azure_compute_subnet" {
-  type        = string
+  type = string
   description = "The name of the subnet for worker nodes, either existing or to be created"
 }
 
 variable "azure_private" {
-  type        = bool
+  type = bool
   description = "This determines if this is a private cluster or not."
 }
 
-variable "azure_emulate_single_stack_ipv6" {
-  type        = bool
-  description = "This determines whether a dual-stack cluster is configured to emulate single-stack IPv6."
+variable "azure_outbound_user_defined_routing" {
+  type = bool
+  default = false
+
+  description = <<EOF
+This determined whether User defined routing will be used for egress to Internet.
+When false, Standard LB will be used for egress to the Internet.
+EOF
 }

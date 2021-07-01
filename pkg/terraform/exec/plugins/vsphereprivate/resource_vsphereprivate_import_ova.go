@@ -151,6 +151,9 @@ func findImportOvaParams(client *vim25.Client, datacenter, cluster, datastore, n
 			break
 		}
 	}
+	if importOvaParams.Network == nil {
+		return nil, errors.Errorf("failed to find a host in the cluster that contains the provided network")
+	}
 
 	// Find all the datastores that are configured under the cluster
 	datastores, err := clusterComputeResource.Datastores(ctx)
@@ -169,24 +172,31 @@ func findImportOvaParams(client *vim25.Client, datacenter, cluster, datastore, n
 			break
 		}
 	}
+	if importOvaParams.Datastore == nil {
+		return nil, errors.Errorf("failed to find a host in the cluster that contains the provided datastore")
+	}
 
 	// Find all the HostSystem(s) under cluster
 	hosts, err := clusterComputeResource.Hosts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	foundDatastore := false
-	foundNetwork := false
 	var hostSystemManagedObject mo.HostSystem
 
 	// Confirm that the network and datastore that was provided is
 	// available for use on the HostSystem we will import the
 	// OVA to.
 	for _, hostObj := range hosts {
-		hostObj.Properties(ctx, hostObj.Reference(), []string{"network", "datastore"}, &hostSystemManagedObject)
-
+		foundDatastore := false
+		foundNetwork := false
+		err := hostObj.Properties(ctx, hostObj.Reference(), []string{"network", "datastore", "runtime"}, &hostSystemManagedObject)
 		if err != nil {
 			return nil, err
+		}
+
+		// Skip all hosts that are in maintenance mode.
+		if hostSystemManagedObject.Runtime.InMaintenanceMode {
+			continue
 		}
 		for _, dsMoRef := range hostSystemManagedObject.Datastore {
 
@@ -209,16 +219,10 @@ func findImportOvaParams(client *vim25.Client, datacenter, cluster, datastore, n
 				return nil, err
 			}
 			importOvaParams.ResourcePool = resourcePool
+			return importOvaParams, nil
 		}
 	}
-	if !foundDatastore {
-		return nil, errors.Errorf("failed to find a host in the cluster that contains the provided datastore")
-	}
-	if !foundNetwork {
-		return nil, errors.Errorf("failed to find a host in the cluster that contains the provided network")
-	}
-
-	return importOvaParams, nil
+	return nil, errors.Errorf("failed to find a host in the cluster that contains the provided datastore and network")
 }
 
 func attachTag(d *schema.ResourceData, meta interface{}) error {
@@ -339,6 +343,13 @@ func resourceVSpherePrivateImportOvaCreate(d *schema.ResourceData, meta interfac
 		return errors.Errorf("failed to lease wait: %s", err)
 	}
 
+	d.SetId(info.Entity.Value)
+
+	err = attachTag(d, meta)
+	if err != nil {
+		return errors.Errorf("failed to attach tag to virtual machine: %s", err)
+	}
+
 	u := lease.StartUpdater(ctx, info)
 	defer u.Done()
 
@@ -356,13 +367,19 @@ func resourceVSpherePrivateImportOvaCreate(d *schema.ResourceData, meta interfac
 		return errors.Errorf("failed to lease complete: %s", err)
 	}
 
-	d.SetId(info.Entity.Value)
-
-	err = attachTag(d, meta)
-	if err != nil {
-		return errors.Errorf("failed to attach tag to virtual machine: %s", err)
-	}
 	log.Printf("[DEBUG] %s: ova import complete", d.Get("name").(string))
+
+	vm := object.NewVirtualMachine(client, info.Entity)
+	if vm == nil {
+		return fmt.Errorf("error VirtualMachine not found, managed object id: %s", d.Id())
+	}
+	log.Printf("[DEBUG] %s: mark as template", vm.Name())
+
+	err = vm.MarkAsTemplate(ctx)
+	if err != nil {
+		return errors.Errorf("failed to mark vm as template: %s", err)
+	}
+	log.Printf("[DEBUG] %s: mark as template complete", vm.Name())
 
 	return resourceVSpherePrivateImportOvaRead(d, meta)
 }

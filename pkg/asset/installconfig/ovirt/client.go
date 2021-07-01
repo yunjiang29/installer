@@ -15,6 +15,7 @@ func getConnection(ovirtConfig Config) (*ovirtsdk.Connection, error) {
 		Username(ovirtConfig.Username).
 		Password(ovirtConfig.Password).
 		CAFile(ovirtConfig.CAFile).
+		CACert([]byte(ovirtConfig.CABundle)).
 		Insecure(ovirtConfig.Insecure).
 		Build()
 	if err != nil {
@@ -28,11 +29,11 @@ func getConnection(ovirtConfig Config) (*ovirtsdk.Connection, error) {
 func NewConnection() (*ovirtsdk.Connection, error) {
 	ovirtConfig, err := NewConfig()
 	if err != nil {
-		return nil, errors.Wrap(err, "getting ovirt configuration")
+		return nil, errors.Wrap(err, "getting Engine configuration")
 	}
 	con, err := getConnection(ovirtConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "establishing ovirt connection")
+		return nil, errors.Wrap(err, "establishing Engine connection")
 	}
 	return con, nil
 }
@@ -67,4 +68,31 @@ func FetchVNICProfileByClusterNetwork(con *ovirtsdk.Connection, clusterID string
 		return profilesGet.MustProfiles().Slice(), nil
 	}
 	return nil, fmt.Errorf("there are no vNic profiles for the given cluster ID %s and network name %s", clusterID, networkName)
+}
+
+// GetClusterName returns the name of the ovirt cluster with the specified Cluster ID
+func GetClusterName(con *ovirtsdk.Connection, clusterID string) (string, error) {
+	clusterResponse, err := con.SystemService().ClustersService().ClusterService(clusterID).Get().Send()
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch cluster %s (%w)", clusterID, err)
+	}
+	cluster, ok := clusterResponse.Cluster()
+	if !ok {
+		return "", fmt.Errorf("failed to find cluster with id %s", clusterID)
+	}
+	return cluster.MustName(), nil
+}
+
+// FindHostsInCluster returns a list of the hosts that exists in the specified cluster
+func FindHostsInCluster(con *ovirtsdk.Connection, cName string) ([]*ovirtsdk.Host, error) {
+	res, err := con.SystemService().HostsService().
+		List().Search(fmt.Sprintf("cluster=%s", cName)).Send()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch hosts for cluster %s (%w)", cName, err)
+	}
+	hosts, ok := res.Hosts()
+	if !ok {
+		return nil, fmt.Errorf("failed to find hosts in cluster %s", cName)
+	}
+	return hosts.Slice(), nil
 }

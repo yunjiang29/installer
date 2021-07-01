@@ -17,8 +17,10 @@ deployments, see [install_upi.md](install_upi.md).
 
 ### Network Requirements
 
-It is assumed that all hosts have at least 2 NICs, used for the following
-purposes:
+You have the choice of a single or dual NIC setup, depending on whether
+you would like to use PXE/DHCP-based provisioning or not. Please note
+that disabling the provisioning network means that host BMC's must be
+accessible over the external network which may not be desirable.
 
 * **NIC #1 - External Network**
   * This network is the main network used by the cluster, including API traffic
@@ -46,12 +48,15 @@ purposes:
     * `api.<cluster-name>.<base-domain>` - pointing to the API VIP
     * `*.apps.<cluster-name>.<base-domain>` - pointing to the Ingress VIP
 
-* **NIC #2 - Provisioning Network**
+* **NIC #2 - Provisioning Network (optional) **
   * A private network used for PXE based provisioning.
   * You must specify `provisioningNetworkInterface` to indicate which
-    interface is connected to this network.
-  * DHCP is automated for this network by default, to rely on external
-    DHCP, set the platform's `provisioningDHCPExternal` option to `true`
+    interface is connected to this network on the control plane nodes.
+  * The provisioning network may be "Managed" (default), "Unmanaged," or
+    "Disabled."
+  * In managed mode, DHCP and TFTP are configured to run in the cluster. In
+    unmanaged mode, TFTP is still available but you must configure DHCP
+    externally.
   * Addressing for this network defaults to `172.22.0.0/24`, but is
     configurable by setting the `provisioningNetworkCIDR` option.
   * Two IP's are required to be available for use, one for the bootstrap
@@ -99,7 +104,10 @@ use one of the hosts that is intended to later become a worker node in the same
 cluster.  That way it is already connected to the proper networks.
 
 It is recommended that the provisioning host be a bare metal host, as it must be
-able to use libvirt to launch the OpenShift bootstrap VM locally.
+able to use libvirt to launch the OpenShift bootstrap VM locally. Additionally,
+the installer creates a directory backed libvirt storage pool in the 
+`/var/lib/libvirt/openshift-images` directory. Sufficient disk space must be
+available in the directory to host the bootstrap VM volume.
 
 ### Supported Hardware
 
@@ -134,13 +142,23 @@ platform should be considered experimental and still subject to change without
 backwards compatibility.  In particular, some items likely to change soon
 include:
 
-* The `hardwareProfile` is currently exposed as a way to allow specifying
+* **This field is deprecated. See rootDeviceHints instead.**
+  The `hardwareProfile` is currently exposed as a way to allow specifying
   different hardware parameters for deployment.  By default, we will deploy
   RHCOS to the first disk, but that may not be appropriate for all hardware.
   The `hardwareProfile` is the field we have available to change that.  This
   interface is subject to change.  In the meantime, hardware profiles can be
   found here:
   https://github.com/metal3-io/baremetal-operator/blob/master/pkg/hardware/profile.go#L48
+
+* *rootDeviceHints* -- Guidance for how to choose the device to
+  receive the image being provisioned. Documentation on using this field can
+  be found here
+  https://github.com/metal3-io/baremetal-operator/blob/master/docs/api.md
+
+* *bootMode* -- Put the server in legacy (BIOS) or UEFI mode for
+  booting. Use UEFISecureBoot to enable UEFI and secure boot on the server.
+  The default is UEFI.
 
 ```yaml
 apiVersion: v1
@@ -171,7 +189,9 @@ platform:
           username: admin
           password: password
         bootMACAddress: 00:11:07:4e:f6:68
-        hardwareProfile: default
+        rootDeviceHints:
+          minSizeGigabytes: 20
+        bootMode: legacy
       - name: openshift-master-1
         role: master
         bmc:
@@ -179,7 +199,9 @@ platform:
           username: admin
           password: password
         bootMACAddress: 00:11:07:4e:f6:6c
-        hardwareProfile: default
+        rootDeviceHints:
+          minSizeGigabytes: 20
+        bootMode: UEFI
       - name: openshift-master-2
         role: master
         bmc:
@@ -187,7 +209,8 @@ platform:
           username: admin
           password: password
         bootMACAddress: 00:11:07:4e:f6:70
-        hardwareProfile: default
+        rootDeviceHints:
+          minSizeGigabytes: 20
       - name: openshift-worker-0
         role: worker
         bmc:
@@ -195,7 +218,8 @@ platform:
           username: admin
           password: password
         bootMACAddress: 00:11:07:4e:f6:71
-        hardwareProfile: default
+        rootDeviceHints:
+          minSizeGigabytes: 20
 pullSecret: ...
 sshKey: ...
 ```
@@ -260,6 +284,9 @@ both required.  For example
 To use virtual media instead of PXE for attaching the provisioning
 image to the host, use `redfish-virtualmedia://` or `idrac-virtualmedia://`
 
+Please note that when the provisioning network is disabled, the only
+supported BMC's are virtual media.
+
 ## Work in Progress
 
 Integration of the `baremetal` platform is still a work-in-progress across
@@ -276,21 +303,6 @@ instead of the leaving the existing issues against the KNI fork of the installer
 platform.
 
 https://github.com/openshift-metal3/kni-installer/issues/74
-
-### install gather not supported
-
-When an installation fails, `openshift-install` will attempt to gather debug
-information from hosts.  This is not yet supported by the `baremetal` platform.
-
-https://github.com/openshift-metal3/kni-installer/issues/79
-
-### Provisioning subnet not fully configurable
-
-There are some install-config parameters to control templating of the provisioning
-network configuration, but fully supporting alternative subnets for the
-provisioning network is incomplete.
-
-https://github.com/openshift/installer/issues/2091
 
 ## Troubleshooting
 
@@ -329,7 +341,8 @@ may also view the logs of the individual containers:
   - `podman logs ironic`
   - `podman logs ironic-inspector`
   - `podman logs ironic-dnsmasq`
-
+  - `podman logs ironic-deploy-ramdisk-logs`
+  - `podman logs ironic-inspector-ramdisk-logs`
 
 
 ### Control Plane

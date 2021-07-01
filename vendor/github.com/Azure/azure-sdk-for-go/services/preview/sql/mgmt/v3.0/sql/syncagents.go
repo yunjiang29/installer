@@ -37,7 +37,8 @@ func NewSyncAgentsClient(subscriptionID string) SyncAgentsClient {
 	return NewSyncAgentsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewSyncAgentsClientWithBaseURI creates an instance of the SyncAgentsClient client.
+// NewSyncAgentsClientWithBaseURI creates an instance of the SyncAgentsClient client using a custom endpoint.  Use this
+// when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewSyncAgentsClientWithBaseURI(baseURI string, subscriptionID string) SyncAgentsClient {
 	return SyncAgentsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -68,7 +69,7 @@ func (client SyncAgentsClient) CreateOrUpdate(ctx context.Context, resourceGroup
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -102,13 +103,38 @@ func (client SyncAgentsClient) CreateOrUpdatePreparer(ctx context.Context, resou
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncAgentsClient) CreateOrUpdateSender(req *http.Request) (future SyncAgentsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client SyncAgentsClient) (sa SyncAgent, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncAgentsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.SyncAgentsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		sa.Response.Response, err = future.GetResult(sender)
+		if sa.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncAgentsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && sa.Response.Response.StatusCode != http.StatusNoContent {
+			sa, err = client.CreateOrUpdateResponder(sa.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.SyncAgentsCreateOrUpdateFuture", "Result", sa.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -117,7 +143,6 @@ func (client SyncAgentsClient) CreateOrUpdateSender(req *http.Request) (future S
 func (client SyncAgentsClient) CreateOrUpdateResponder(resp *http.Response) (result SyncAgent, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -150,7 +175,7 @@ func (client SyncAgentsClient) Delete(ctx context.Context, resourceGroupName str
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -182,13 +207,28 @@ func (client SyncAgentsClient) DeletePreparer(ctx context.Context, resourceGroup
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncAgentsClient) DeleteSender(req *http.Request) (future SyncAgentsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client SyncAgentsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncAgentsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.SyncAgentsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -197,7 +237,6 @@ func (client SyncAgentsClient) DeleteSender(req *http.Request) (future SyncAgent
 func (client SyncAgentsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -237,6 +276,7 @@ func (client SyncAgentsClient) GenerateKey(ctx context.Context, resourceGroupNam
 	result, err = client.GenerateKeyResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "GenerateKey", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -267,8 +307,7 @@ func (client SyncAgentsClient) GenerateKeyPreparer(ctx context.Context, resource
 // GenerateKeySender sends the GenerateKey request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncAgentsClient) GenerateKeySender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GenerateKeyResponder handles the response to the GenerateKey request. The method always
@@ -276,7 +315,6 @@ func (client SyncAgentsClient) GenerateKeySender(req *http.Request) (*http.Respo
 func (client SyncAgentsClient) GenerateKeyResponder(resp *http.Response) (result SyncAgentKeyProperties, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -317,6 +355,7 @@ func (client SyncAgentsClient) Get(ctx context.Context, resourceGroupName string
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -347,8 +386,7 @@ func (client SyncAgentsClient) GetPreparer(ctx context.Context, resourceGroupNam
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncAgentsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -356,7 +394,6 @@ func (client SyncAgentsClient) GetSender(req *http.Request) (*http.Response, err
 func (client SyncAgentsClient) GetResponder(resp *http.Response) (result SyncAgent, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -397,6 +434,11 @@ func (client SyncAgentsClient) ListByServer(ctx context.Context, resourceGroupNa
 	result.salr, err = client.ListByServerResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "ListByServer", resp, "Failure responding to request")
+		return
+	}
+	if result.salr.hasNextLink() && result.salr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -426,8 +468,7 @@ func (client SyncAgentsClient) ListByServerPreparer(ctx context.Context, resourc
 // ListByServerSender sends the ListByServer request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncAgentsClient) ListByServerSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByServerResponder handles the response to the ListByServer request. The method always
@@ -435,7 +476,6 @@ func (client SyncAgentsClient) ListByServerSender(req *http.Request) (*http.Resp
 func (client SyncAgentsClient) ListByServerResponder(resp *http.Response) (result SyncAgentListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -514,6 +554,11 @@ func (client SyncAgentsClient) ListLinkedDatabases(ctx context.Context, resource
 	result.saldlr, err = client.ListLinkedDatabasesResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncAgentsClient", "ListLinkedDatabases", resp, "Failure responding to request")
+		return
+	}
+	if result.saldlr.hasNextLink() && result.saldlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -544,8 +589,7 @@ func (client SyncAgentsClient) ListLinkedDatabasesPreparer(ctx context.Context, 
 // ListLinkedDatabasesSender sends the ListLinkedDatabases request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncAgentsClient) ListLinkedDatabasesSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListLinkedDatabasesResponder handles the response to the ListLinkedDatabases request. The method always
@@ -553,7 +597,6 @@ func (client SyncAgentsClient) ListLinkedDatabasesSender(req *http.Request) (*ht
 func (client SyncAgentsClient) ListLinkedDatabasesResponder(resp *http.Response) (result SyncAgentLinkedDatabaseListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

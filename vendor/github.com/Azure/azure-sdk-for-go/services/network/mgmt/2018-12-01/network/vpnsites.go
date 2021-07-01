@@ -35,7 +35,8 @@ func NewVpnSitesClient(subscriptionID string) VpnSitesClient {
 	return NewVpnSitesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVpnSitesClientWithBaseURI creates an instance of the VpnSitesClient client.
+// NewVpnSitesClientWithBaseURI creates an instance of the VpnSitesClient client using a custom endpoint.  Use this
+// when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewVpnSitesClientWithBaseURI(baseURI string, subscriptionID string) VpnSitesClient {
 	return VpnSitesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -64,7 +65,7 @@ func (client VpnSitesClient) CreateOrUpdate(ctx context.Context, resourceGroupNa
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -98,13 +99,38 @@ func (client VpnSitesClient) CreateOrUpdatePreparer(ctx context.Context, resourc
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesClient) CreateOrUpdateSender(req *http.Request) (future VpnSitesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client VpnSitesClient) (vs VpnSite, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.VpnSitesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.VpnSitesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		vs.Response.Response, err = future.GetResult(sender)
+		if vs.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.VpnSitesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && vs.Response.Response.StatusCode != http.StatusNoContent {
+			vs, err = client.CreateOrUpdateResponder(vs.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.VpnSitesCreateOrUpdateFuture", "Result", vs.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -113,7 +139,6 @@ func (client VpnSitesClient) CreateOrUpdateSender(req *http.Request) (future Vpn
 func (client VpnSitesClient) CreateOrUpdateResponder(resp *http.Response) (result VpnSite, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -144,7 +169,7 @@ func (client VpnSitesClient) Delete(ctx context.Context, resourceGroupName strin
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -175,13 +200,28 @@ func (client VpnSitesClient) DeletePreparer(ctx context.Context, resourceGroupNa
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesClient) DeleteSender(req *http.Request) (future VpnSitesDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client VpnSitesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.VpnSitesDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.VpnSitesDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -190,7 +230,6 @@ func (client VpnSitesClient) DeleteSender(req *http.Request) (future VpnSitesDel
 func (client VpnSitesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -228,6 +267,7 @@ func (client VpnSitesClient) Get(ctx context.Context, resourceGroupName string, 
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -257,8 +297,7 @@ func (client VpnSitesClient) GetPreparer(ctx context.Context, resourceGroupName 
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -266,7 +305,6 @@ func (client VpnSitesClient) GetSender(req *http.Request) (*http.Response, error
 func (client VpnSitesClient) GetResponder(resp *http.Response) (result VpnSite, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -303,6 +341,11 @@ func (client VpnSitesClient) List(ctx context.Context) (result ListVpnSitesResul
 	result.lvsr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.lvsr.hasNextLink() && result.lvsr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -330,8 +373,7 @@ func (client VpnSitesClient) ListPreparer(ctx context.Context) (*http.Request, e
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -339,7 +381,6 @@ func (client VpnSitesClient) ListSender(req *http.Request) (*http.Response, erro
 func (client VpnSitesClient) ListResponder(resp *http.Response) (result ListVpnSitesResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -415,6 +456,11 @@ func (client VpnSitesClient) ListByResourceGroup(ctx context.Context, resourceGr
 	result.lvsr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.lvsr.hasNextLink() && result.lvsr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -443,8 +489,7 @@ func (client VpnSitesClient) ListByResourceGroupPreparer(ctx context.Context, re
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -452,7 +497,6 @@ func (client VpnSitesClient) ListByResourceGroupSender(req *http.Request) (*http
 func (client VpnSitesClient) ListByResourceGroupResponder(resp *http.Response) (result ListVpnSitesResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -521,7 +565,7 @@ func (client VpnSitesClient) UpdateTags(ctx context.Context, resourceGroupName s
 
 	result, err = client.UpdateTagsSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "UpdateTags", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "UpdateTags", nil, "Failure sending request")
 		return
 	}
 
@@ -554,13 +598,38 @@ func (client VpnSitesClient) UpdateTagsPreparer(ctx context.Context, resourceGro
 // UpdateTagsSender sends the UpdateTags request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesClient) UpdateTagsSender(req *http.Request) (future VpnSitesUpdateTagsFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client VpnSitesClient) (vs VpnSite, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.VpnSitesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.VpnSitesUpdateTagsFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		vs.Response.Response, err = future.GetResult(sender)
+		if vs.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.VpnSitesUpdateTagsFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && vs.Response.Response.StatusCode != http.StatusNoContent {
+			vs, err = client.UpdateTagsResponder(vs.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.VpnSitesUpdateTagsFuture", "Result", vs.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -569,7 +638,6 @@ func (client VpnSitesClient) UpdateTagsSender(req *http.Request) (future VpnSite
 func (client VpnSitesClient) UpdateTagsResponder(resp *http.Response) (result VpnSite, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

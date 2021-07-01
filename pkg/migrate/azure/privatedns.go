@@ -15,6 +15,7 @@ import (
 	azdns "github.com/Azure/azure-sdk-for-go/services/preview/dns/mgmt/2018-03-01-preview/dns"
 	azprivatedns "github.com/Azure/azure-sdk-for-go/services/privatedns/mgmt/2018-09-01/privatedns"
 	azconfig "github.com/openshift/installer/pkg/asset/installconfig/azure"
+	"github.com/openshift/installer/pkg/types/azure"
 )
 
 type legacyDNSZone struct {
@@ -29,10 +30,10 @@ type legacyDNSClient struct {
 }
 
 func newLegacyDNSClient(session *azconfig.Session, resourceGroup string) *legacyDNSClient {
-	zonesClient := azdns.NewZonesClient(session.Credentials.SubscriptionID)
+	zonesClient := azdns.NewZonesClientWithBaseURI(dnsEndpoint(session), session.Credentials.SubscriptionID)
 	zonesClient.Authorizer = session.Authorizer
 
-	recordsetsClient := azdns.NewRecordSetsClient(session.Credentials.SubscriptionID)
+	recordsetsClient := azdns.NewRecordSetsClientWithBaseURI(dnsEndpoint(session), session.Credentials.SubscriptionID)
 	recordsetsClient.Authorizer = session.Authorizer
 
 	return &legacyDNSClient{resourceGroup, zonesClient, recordsetsClient}
@@ -81,9 +82,7 @@ func (client *legacyDNSClient) getZone(legacyZone string) (*legacyDNSZone, error
 			return nil, err
 		}
 
-		for _, rs := range recordsetsPage.Values() {
-			legacyDNSZone.recordsets = append(legacyDNSZone.recordsets, rs)
-		}
+		legacyDNSZone.recordsets = append(legacyDNSZone.recordsets, recordsetsPage.Values()...)
 	}
 
 	return &legacyDNSZone, nil
@@ -124,16 +123,16 @@ type privateDNSClient struct {
 }
 
 func newPrivateDNSClient(session *azconfig.Session, resourceGroup string, virtualNetwork string, vnetResourceGroup string) *privateDNSClient {
-	zonesClient := azprivatedns.NewPrivateZonesClient(session.Credentials.SubscriptionID)
+	zonesClient := azprivatedns.NewPrivateZonesClientWithBaseURI(dnsEndpoint(session), session.Credentials.SubscriptionID)
 	zonesClient.Authorizer = session.Authorizer
 
-	recordsetsClient := azprivatedns.NewRecordSetsClient(session.Credentials.SubscriptionID)
+	recordsetsClient := azprivatedns.NewRecordSetsClientWithBaseURI(dnsEndpoint(session), session.Credentials.SubscriptionID)
 	recordsetsClient.Authorizer = session.Authorizer
 
-	virtualNetworkLinksClient := azprivatedns.NewVirtualNetworkLinksClient(session.Credentials.SubscriptionID)
+	virtualNetworkLinksClient := azprivatedns.NewVirtualNetworkLinksClientWithBaseURI(dnsEndpoint(session), session.Credentials.SubscriptionID)
 	virtualNetworkLinksClient.Authorizer = session.Authorizer
 
-	virtualNetworksClient := aznetwork.NewVirtualNetworksClient(session.Credentials.SubscriptionID)
+	virtualNetworksClient := aznetwork.NewVirtualNetworksClientWithBaseURI(dnsEndpoint(session), session.Credentials.SubscriptionID)
 	virtualNetworksClient.Authorizer = session.Authorizer
 
 	return &privateDNSClient{resourceGroup, vnetResourceGroup, virtualNetwork, zonesClient, recordsetsClient, virtualNetworkLinksClient, virtualNetworksClient}
@@ -439,7 +438,7 @@ func (client *privateDNSClient) migrateLegacyZone(legacyDNSZone *legacyDNSZone, 
 	}
 
 	// Do we link, or not?
-	if link == false || client.virtualNetwork == "" {
+	if !link || client.virtualNetwork == "" {
 		return nil
 	}
 
@@ -484,8 +483,8 @@ func (client *privateDNSClient) migrateLegacyZone(legacyDNSZone *legacyDNSZone, 
 }
 
 // Migrate does a migration from a legacy zone to a private zone
-func Migrate(resourceGroup string, migrateZone string, virtualNetwork string, vnetResourceGroup string, link bool) error {
-	session, err := azconfig.GetSession()
+func Migrate(cloudName azure.CloudEnvironment, resourceGroup string, migrateZone string, virtualNetwork string, vnetResourceGroup string, link bool) error {
+	session, err := azconfig.GetSession(cloudName, "")
 	if err != nil {
 		return err
 	}
@@ -508,8 +507,8 @@ func Migrate(resourceGroup string, migrateZone string, virtualNetwork string, vn
 }
 
 // Eligible shows legacy zones that are eligible for migrating to private zones
-func Eligible() error {
-	session, err := azconfig.GetSession()
+func Eligible(cloudName azure.CloudEnvironment) error {
+	session, err := azconfig.GetSession(cloudName, "")
 	if err != nil {
 		return err
 	}
@@ -526,4 +525,8 @@ func Eligible() error {
 	}
 
 	return nil
+}
+
+func dnsEndpoint(session *azconfig.Session) string {
+	return session.Environment.ResourceManagerEndpoint
 }

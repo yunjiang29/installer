@@ -39,7 +39,8 @@ func NewJobExecutionsClient(subscriptionID string) JobExecutionsClient {
 	return NewJobExecutionsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewJobExecutionsClientWithBaseURI creates an instance of the JobExecutionsClient client.
+// NewJobExecutionsClientWithBaseURI creates an instance of the JobExecutionsClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewJobExecutionsClientWithBaseURI(baseURI string, subscriptionID string) JobExecutionsClient {
 	return JobExecutionsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -79,6 +80,7 @@ func (client JobExecutionsClient) Cancel(ctx context.Context, resourceGroupName 
 	result, err = client.CancelResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "Cancel", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -111,8 +113,7 @@ func (client JobExecutionsClient) CancelPreparer(ctx context.Context, resourceGr
 // CancelSender sends the Cancel request. The method will close the
 // http.Response Body if it receives an error.
 func (client JobExecutionsClient) CancelSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // CancelResponder handles the response to the Cancel request. The method always
@@ -120,7 +121,6 @@ func (client JobExecutionsClient) CancelSender(req *http.Request) (*http.Respons
 func (client JobExecutionsClient) CancelResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByClosing())
 	result.Response = resp
@@ -153,7 +153,7 @@ func (client JobExecutionsClient) Create(ctx context.Context, resourceGroupName 
 
 	result, err = client.CreateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "Create", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "Create", nil, "Failure sending request")
 		return
 	}
 
@@ -186,13 +186,38 @@ func (client JobExecutionsClient) CreatePreparer(ctx context.Context, resourceGr
 // CreateSender sends the Create request. The method will close the
 // http.Response Body if it receives an error.
 func (client JobExecutionsClient) CreateSender(req *http.Request) (future JobExecutionsCreateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client JobExecutionsClient) (je JobExecution, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.JobExecutionsCreateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.JobExecutionsCreateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		je.Response.Response, err = future.GetResult(sender)
+		if je.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.JobExecutionsCreateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && je.Response.Response.StatusCode != http.StatusNoContent {
+			je, err = client.CreateResponder(je.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.JobExecutionsCreateFuture", "Result", je.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -201,7 +226,6 @@ func (client JobExecutionsClient) CreateSender(req *http.Request) (future JobExe
 func (client JobExecutionsClient) CreateResponder(resp *http.Response) (result JobExecution, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -236,7 +260,7 @@ func (client JobExecutionsClient) CreateOrUpdate(ctx context.Context, resourceGr
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -270,13 +294,38 @@ func (client JobExecutionsClient) CreateOrUpdatePreparer(ctx context.Context, re
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client JobExecutionsClient) CreateOrUpdateSender(req *http.Request) (future JobExecutionsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client JobExecutionsClient) (je JobExecution, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.JobExecutionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.JobExecutionsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		je.Response.Response, err = future.GetResult(sender)
+		if je.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.JobExecutionsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && je.Response.Response.StatusCode != http.StatusNoContent {
+			je, err = client.CreateOrUpdateResponder(je.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.JobExecutionsCreateOrUpdateFuture", "Result", je.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -285,7 +334,6 @@ func (client JobExecutionsClient) CreateOrUpdateSender(req *http.Request) (futur
 func (client JobExecutionsClient) CreateOrUpdateResponder(resp *http.Response) (result JobExecution, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -328,6 +376,7 @@ func (client JobExecutionsClient) Get(ctx context.Context, resourceGroupName str
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -360,8 +409,7 @@ func (client JobExecutionsClient) GetPreparer(ctx context.Context, resourceGroup
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client JobExecutionsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -369,7 +417,6 @@ func (client JobExecutionsClient) GetSender(req *http.Request) (*http.Response, 
 func (client JobExecutionsClient) GetResponder(resp *http.Response) (result JobExecution, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -418,6 +465,11 @@ func (client JobExecutionsClient) ListByAgent(ctx context.Context, resourceGroup
 	result.jelr, err = client.ListByAgentResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "ListByAgent", resp, "Failure responding to request")
+		return
+	}
+	if result.jelr.hasNextLink() && result.jelr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -469,8 +521,7 @@ func (client JobExecutionsClient) ListByAgentPreparer(ctx context.Context, resou
 // ListByAgentSender sends the ListByAgent request. The method will close the
 // http.Response Body if it receives an error.
 func (client JobExecutionsClient) ListByAgentSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByAgentResponder handles the response to the ListByAgent request. The method always
@@ -478,7 +529,6 @@ func (client JobExecutionsClient) ListByAgentSender(req *http.Request) (*http.Re
 func (client JobExecutionsClient) ListByAgentResponder(resp *http.Response) (result JobExecutionListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -565,6 +615,11 @@ func (client JobExecutionsClient) ListByJob(ctx context.Context, resourceGroupNa
 	result.jelr, err = client.ListByJobResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.JobExecutionsClient", "ListByJob", resp, "Failure responding to request")
+		return
+	}
+	if result.jelr.hasNextLink() && result.jelr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -617,8 +672,7 @@ func (client JobExecutionsClient) ListByJobPreparer(ctx context.Context, resourc
 // ListByJobSender sends the ListByJob request. The method will close the
 // http.Response Body if it receives an error.
 func (client JobExecutionsClient) ListByJobSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByJobResponder handles the response to the ListByJob request. The method always
@@ -626,7 +680,6 @@ func (client JobExecutionsClient) ListByJobSender(req *http.Request) (*http.Resp
 func (client JobExecutionsClient) ListByJobResponder(resp *http.Response) (result JobExecutionListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

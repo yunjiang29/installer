@@ -8,10 +8,15 @@ import (
 
 	"github.com/openshift/installer/pkg/asset"
 	awsconfig "github.com/openshift/installer/pkg/asset/installconfig/aws"
+	gcpconfig "github.com/openshift/installer/pkg/asset/installconfig/gcp"
+	kubevirtconfig "github.com/openshift/installer/pkg/asset/installconfig/kubevirt"
+	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/aws"
 	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/baremetal"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
+	"github.com/openshift/installer/pkg/types/kubevirt"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	"github.com/openshift/installer/pkg/types/none"
 	"github.com/openshift/installer/pkg/types/openstack"
@@ -39,14 +44,32 @@ func (a *PlatformPermsCheck) Generate(dependencies asset.Parents) error {
 	ic := &InstallConfig{}
 	dependencies.Get(ic)
 
+	if ic.Config.CredentialsMode != "" {
+		return nil
+	}
+
 	var err error
 	platform := ic.Config.Platform.Name()
 	switch platform {
 	case aws.Name:
-		permissionGroups := []awsconfig.PermissionGroup{awsconfig.PermissionCreateBase, awsconfig.PermissionDeleteBase}
-		// If subnets are not provided in install-config.yaml, include network permissions
-		if len(ic.Config.AWS.Subnets) == 0 {
-			permissionGroups = append(permissionGroups, awsconfig.PermissionCreateNetworking, awsconfig.PermissionDeleteNetworking)
+		permissionGroups := []awsconfig.PermissionGroup{awsconfig.PermissionCreateBase}
+		usingExistingVPC := len(ic.Config.AWS.Subnets) != 0
+
+		if !usingExistingVPC {
+			permissionGroups = append(permissionGroups, awsconfig.PermissionCreateNetworking)
+		}
+
+		// Add delete permissions for non-C2S installs.
+		if !aws.C2SRegions.Has(ic.Config.AWS.Region) {
+			permissionGroups = append(permissionGroups, awsconfig.PermissionDeleteBase)
+			if usingExistingVPC {
+				permissionGroups = append(permissionGroups, awsconfig.PermissionDeleteSharedNetworking)
+			} else {
+				permissionGroups = append(permissionGroups, awsconfig.PermissionDeleteNetworking)
+			}
+			if awsIncludesUserSuppliedInstanceRole(ic.Config) {
+				permissionGroups = append(permissionGroups, awsconfig.PermissionDeleteSharedInstanceRole)
+			}
 		}
 
 		ssn, err := ic.AWS.Session(ctx)
@@ -58,7 +81,29 @@ func (a *PlatformPermsCheck) Generate(dependencies asset.Parents) error {
 		if err != nil {
 			return errors.Wrap(err, "validate AWS credentials")
 		}
-	case azure.Name, baremetal.Name, gcp.Name, libvirt.Name, none.Name, openstack.Name, ovirt.Name, vsphere.Name:
+	case gcp.Name:
+		client, err := gcpconfig.NewClient(context.TODO())
+		if err != nil {
+			return err
+		}
+
+		if err = gcpconfig.ValidateEnabledServices(ctx, client, ic.Config.GCP.ProjectID); err != nil {
+			return errors.Wrap(err, "failed to validate services in this project")
+		}
+	case ibmcloud.Name:
+		// no permissions to check
+		// TODO: IBM: verify there are none
+	case kubevirt.Name:
+		client, err := kubevirtconfig.NewClient()
+		if err != nil {
+			return err
+		}
+
+		err = kubevirtconfig.ValidatePermissions(client, ic.Config)
+		if err != nil {
+			return errors.Wrap(err, "Kubevirt permissions validation failed")
+		}
+	case azure.Name, baremetal.Name, libvirt.Name, none.Name, openstack.Name, ovirt.Name, vsphere.Name:
 		// no permissions to check
 	default:
 		err = fmt.Errorf("unknown platform type %q", platform)
@@ -69,4 +114,22 @@ func (a *PlatformPermsCheck) Generate(dependencies asset.Parents) error {
 // Name returns the human-friendly name of the asset.
 func (a *PlatformPermsCheck) Name() string {
 	return "Platform Permissions Check"
+}
+
+func awsIncludesUserSuppliedInstanceRole(installConfig *types.InstallConfig) bool {
+	mp := &aws.MachinePool{}
+	mp.Set(installConfig.Platform.AWS.DefaultMachinePlatform)
+	mp.Set(installConfig.ControlPlane.Platform.AWS)
+	if mp.IAMRole != "" {
+		return true
+	}
+	for _, c := range installConfig.Compute {
+		mp := &aws.MachinePool{}
+		mp.Set(installConfig.Platform.AWS.DefaultMachinePlatform)
+		mp.Set(c.Platform.AWS)
+		if mp.IAMRole != "" {
+			return true
+		}
+	}
+	return false
 }

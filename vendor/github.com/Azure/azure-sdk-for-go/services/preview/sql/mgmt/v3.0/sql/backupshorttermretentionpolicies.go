@@ -38,7 +38,8 @@ func NewBackupShortTermRetentionPoliciesClient(subscriptionID string) BackupShor
 }
 
 // NewBackupShortTermRetentionPoliciesClientWithBaseURI creates an instance of the
-// BackupShortTermRetentionPoliciesClient client.
+// BackupShortTermRetentionPoliciesClient client using a custom endpoint.  Use this when interacting with an Azure
+// cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewBackupShortTermRetentionPoliciesClientWithBaseURI(baseURI string, subscriptionID string) BackupShortTermRetentionPoliciesClient {
 	return BackupShortTermRetentionPoliciesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -69,7 +70,7 @@ func (client BackupShortTermRetentionPoliciesClient) CreateOrUpdate(ctx context.
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -104,13 +105,38 @@ func (client BackupShortTermRetentionPoliciesClient) CreateOrUpdatePreparer(ctx 
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client BackupShortTermRetentionPoliciesClient) CreateOrUpdateSender(req *http.Request) (future BackupShortTermRetentionPoliciesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client BackupShortTermRetentionPoliciesClient) (bstrp BackupShortTermRetentionPolicy, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.BackupShortTermRetentionPoliciesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		bstrp.Response.Response, err = future.GetResult(sender)
+		if bstrp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && bstrp.Response.Response.StatusCode != http.StatusNoContent {
+			bstrp, err = client.CreateOrUpdateResponder(bstrp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesCreateOrUpdateFuture", "Result", bstrp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -119,7 +145,6 @@ func (client BackupShortTermRetentionPoliciesClient) CreateOrUpdateSender(req *h
 func (client BackupShortTermRetentionPoliciesClient) CreateOrUpdateResponder(resp *http.Response) (result BackupShortTermRetentionPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -160,6 +185,7 @@ func (client BackupShortTermRetentionPoliciesClient) Get(ctx context.Context, re
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -191,8 +217,7 @@ func (client BackupShortTermRetentionPoliciesClient) GetPreparer(ctx context.Con
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client BackupShortTermRetentionPoliciesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -200,7 +225,6 @@ func (client BackupShortTermRetentionPoliciesClient) GetSender(req *http.Request
 func (client BackupShortTermRetentionPoliciesClient) GetResponder(resp *http.Response) (result BackupShortTermRetentionPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -242,6 +266,11 @@ func (client BackupShortTermRetentionPoliciesClient) ListByDatabase(ctx context.
 	result.bstrplr, err = client.ListByDatabaseResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesClient", "ListByDatabase", resp, "Failure responding to request")
+		return
+	}
+	if result.bstrplr.hasNextLink() && result.bstrplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -272,8 +301,7 @@ func (client BackupShortTermRetentionPoliciesClient) ListByDatabasePreparer(ctx 
 // ListByDatabaseSender sends the ListByDatabase request. The method will close the
 // http.Response Body if it receives an error.
 func (client BackupShortTermRetentionPoliciesClient) ListByDatabaseSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByDatabaseResponder handles the response to the ListByDatabase request. The method always
@@ -281,7 +309,6 @@ func (client BackupShortTermRetentionPoliciesClient) ListByDatabaseSender(req *h
 func (client BackupShortTermRetentionPoliciesClient) ListByDatabaseResponder(resp *http.Response) (result BackupShortTermRetentionPolicyListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -352,7 +379,7 @@ func (client BackupShortTermRetentionPoliciesClient) Update(ctx context.Context,
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -387,13 +414,38 @@ func (client BackupShortTermRetentionPoliciesClient) UpdatePreparer(ctx context.
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client BackupShortTermRetentionPoliciesClient) UpdateSender(req *http.Request) (future BackupShortTermRetentionPoliciesUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client BackupShortTermRetentionPoliciesClient) (bstrp BackupShortTermRetentionPolicy, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.BackupShortTermRetentionPoliciesUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		bstrp.Response.Response, err = future.GetResult(sender)
+		if bstrp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && bstrp.Response.Response.StatusCode != http.StatusNoContent {
+			bstrp, err = client.UpdateResponder(bstrp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.BackupShortTermRetentionPoliciesUpdateFuture", "Result", bstrp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -402,7 +454,6 @@ func (client BackupShortTermRetentionPoliciesClient) UpdateSender(req *http.Requ
 func (client BackupShortTermRetentionPoliciesClient) UpdateResponder(resp *http.Response) (result BackupShortTermRetentionPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

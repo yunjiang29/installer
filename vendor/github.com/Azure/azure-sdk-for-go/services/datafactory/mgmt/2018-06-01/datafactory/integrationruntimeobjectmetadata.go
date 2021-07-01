@@ -38,7 +38,8 @@ func NewIntegrationRuntimeObjectMetadataClient(subscriptionID string) Integratio
 }
 
 // NewIntegrationRuntimeObjectMetadataClientWithBaseURI creates an instance of the
-// IntegrationRuntimeObjectMetadataClient client.
+// IntegrationRuntimeObjectMetadataClient client using a custom endpoint.  Use this when interacting with an Azure
+// cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewIntegrationRuntimeObjectMetadataClientWithBaseURI(baseURI string, subscriptionID string) IntegrationRuntimeObjectMetadataClient {
 	return IntegrationRuntimeObjectMetadataClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -92,6 +93,7 @@ func (client IntegrationRuntimeObjectMetadataClient) Get(ctx context.Context, re
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "datafactory.IntegrationRuntimeObjectMetadataClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -127,8 +129,7 @@ func (client IntegrationRuntimeObjectMetadataClient) GetPreparer(ctx context.Con
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client IntegrationRuntimeObjectMetadataClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -136,7 +137,6 @@ func (client IntegrationRuntimeObjectMetadataClient) GetSender(req *http.Request
 func (client IntegrationRuntimeObjectMetadataClient) GetResponder(resp *http.Response) (result SsisObjectMetadataListResponse, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -184,7 +184,7 @@ func (client IntegrationRuntimeObjectMetadataClient) Refresh(ctx context.Context
 
 	result, err = client.RefreshSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "datafactory.IntegrationRuntimeObjectMetadataClient", "Refresh", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "datafactory.IntegrationRuntimeObjectMetadataClient", "Refresh", nil, "Failure sending request")
 		return
 	}
 
@@ -216,13 +216,38 @@ func (client IntegrationRuntimeObjectMetadataClient) RefreshPreparer(ctx context
 // RefreshSender sends the Refresh request. The method will close the
 // http.Response Body if it receives an error.
 func (client IntegrationRuntimeObjectMetadataClient) RefreshSender(req *http.Request) (future IntegrationRuntimeObjectMetadataRefreshFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client IntegrationRuntimeObjectMetadataClient) (somsr SsisObjectMetadataStatusResponse, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "datafactory.IntegrationRuntimeObjectMetadataRefreshFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("datafactory.IntegrationRuntimeObjectMetadataRefreshFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		somsr.Response.Response, err = future.GetResult(sender)
+		if somsr.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "datafactory.IntegrationRuntimeObjectMetadataRefreshFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && somsr.Response.Response.StatusCode != http.StatusNoContent {
+			somsr, err = client.RefreshResponder(somsr.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "datafactory.IntegrationRuntimeObjectMetadataRefreshFuture", "Result", somsr.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -231,7 +256,6 @@ func (client IntegrationRuntimeObjectMetadataClient) RefreshSender(req *http.Req
 func (client IntegrationRuntimeObjectMetadataClient) RefreshResponder(resp *http.Response) (result SsisObjectMetadataStatusResponse, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

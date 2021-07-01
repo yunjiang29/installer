@@ -126,11 +126,43 @@ variable "aws_private_subnets" {
   description = "(optional) Existing private subnets into which the cluster should be installed."
 }
 
+variable "aws_internal_zone" {
+  type        = string
+  default     = null
+  description = "(optional) An existing hosted zone (zone ID) to use for the internal API."
+}
+
 variable "aws_publish_strategy" {
   type        = string
   description = "The cluster publishing strategy, either Internal or External"
 }
+
 variable "aws_skip_region_validation" {
   type        = bool
   description = "This decides if the AWS provider should validate if the region is known."
+}
+
+variable "aws_ignition_bucket" {
+  type        = string
+  description = "The S3 bucket where the ignition configuration is stored"
+}
+
+variable "aws_bootstrap_stub_ignition" {
+  type        = string
+  description = <<EOF
+The stub Ignition config that should be used to boot the bootstrap instance. This already points to the presigned URL for the s3 bucket
+specified in aws_ignition_bucket.
+EOF
+}
+
+variable "aws_master_iam_role_name" {
+  type = string
+  description = "The name of the IAM role that will be attached to master instances."
+  default = ""
+}
+
+variable "aws_worker_iam_role_name" {
+  type = string
+  description = "The name of the IAM role that will be attached to worker instances."
+  default = ""
 }

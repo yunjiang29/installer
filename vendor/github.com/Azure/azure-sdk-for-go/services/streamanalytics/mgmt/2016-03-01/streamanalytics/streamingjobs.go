@@ -35,7 +35,8 @@ func NewStreamingJobsClient(subscriptionID string) StreamingJobsClient {
 	return NewStreamingJobsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewStreamingJobsClientWithBaseURI creates an instance of the StreamingJobsClient client.
+// NewStreamingJobsClientWithBaseURI creates an instance of the StreamingJobsClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewStreamingJobsClientWithBaseURI(baseURI string, subscriptionID string) StreamingJobsClient {
 	return StreamingJobsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -70,7 +71,7 @@ func (client StreamingJobsClient) CreateOrReplace(ctx context.Context, streaming
 
 	result, err = client.CreateOrReplaceSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "CreateOrReplace", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "CreateOrReplace", nil, "Failure sending request")
 		return
 	}
 
@@ -111,13 +112,38 @@ func (client StreamingJobsClient) CreateOrReplacePreparer(ctx context.Context, s
 // CreateOrReplaceSender sends the CreateOrReplace request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) CreateOrReplaceSender(req *http.Request) (future StreamingJobsCreateOrReplaceFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client StreamingJobsClient) (sj StreamingJob, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsCreateOrReplaceFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("streamanalytics.StreamingJobsCreateOrReplaceFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		sj.Response.Response, err = future.GetResult(sender)
+		if sj.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsCreateOrReplaceFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && sj.Response.Response.StatusCode != http.StatusNoContent {
+			sj, err = client.CreateOrReplaceResponder(sj.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsCreateOrReplaceFuture", "Result", sj.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -126,7 +152,6 @@ func (client StreamingJobsClient) CreateOrReplaceSender(req *http.Request) (futu
 func (client StreamingJobsClient) CreateOrReplaceResponder(resp *http.Response) (result StreamingJob, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -158,7 +183,7 @@ func (client StreamingJobsClient) Delete(ctx context.Context, resourceGroupName 
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -189,13 +214,28 @@ func (client StreamingJobsClient) DeletePreparer(ctx context.Context, resourceGr
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) DeleteSender(req *http.Request) (future StreamingJobsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client StreamingJobsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("streamanalytics.StreamingJobsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -204,7 +244,6 @@ func (client StreamingJobsClient) DeleteSender(req *http.Request) (future Stream
 func (client StreamingJobsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -247,6 +286,7 @@ func (client StreamingJobsClient) Get(ctx context.Context, resourceGroupName str
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -279,8 +319,7 @@ func (client StreamingJobsClient) GetPreparer(ctx context.Context, resourceGroup
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -288,7 +327,6 @@ func (client StreamingJobsClient) GetSender(req *http.Request) (*http.Response, 
 func (client StreamingJobsClient) GetResponder(resp *http.Response) (result StreamingJob, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -330,6 +368,11 @@ func (client StreamingJobsClient) List(ctx context.Context, expand string) (resu
 	result.sjlr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.sjlr.hasNextLink() && result.sjlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -360,8 +403,7 @@ func (client StreamingJobsClient) ListPreparer(ctx context.Context, expand strin
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -369,7 +411,6 @@ func (client StreamingJobsClient) ListSender(req *http.Request) (*http.Response,
 func (client StreamingJobsClient) ListResponder(resp *http.Response) (result StreamingJobListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -450,6 +491,11 @@ func (client StreamingJobsClient) ListByResourceGroup(ctx context.Context, resou
 	result.sjlr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.sjlr.hasNextLink() && result.sjlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -481,8 +527,7 @@ func (client StreamingJobsClient) ListByResourceGroupPreparer(ctx context.Contex
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -490,7 +535,6 @@ func (client StreamingJobsClient) ListByResourceGroupSender(req *http.Request) (
 func (client StreamingJobsClient) ListByResourceGroupResponder(resp *http.Response) (result StreamingJobListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -560,7 +604,7 @@ func (client StreamingJobsClient) Start(ctx context.Context, resourceGroupName s
 
 	result, err = client.StartSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Start", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Start", nil, "Failure sending request")
 		return
 	}
 
@@ -596,13 +640,28 @@ func (client StreamingJobsClient) StartPreparer(ctx context.Context, resourceGro
 // StartSender sends the Start request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) StartSender(req *http.Request) (future StreamingJobsStartFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client StreamingJobsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsStartFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("streamanalytics.StreamingJobsStartFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -611,7 +670,6 @@ func (client StreamingJobsClient) StartSender(req *http.Request) (future Streami
 func (client StreamingJobsClient) StartResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -643,7 +701,7 @@ func (client StreamingJobsClient) Stop(ctx context.Context, resourceGroupName st
 
 	result, err = client.StopSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Stop", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Stop", nil, "Failure sending request")
 		return
 	}
 
@@ -674,13 +732,28 @@ func (client StreamingJobsClient) StopPreparer(ctx context.Context, resourceGrou
 // StopSender sends the Stop request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) StopSender(req *http.Request) (future StreamingJobsStopFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client StreamingJobsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsStopFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("streamanalytics.StreamingJobsStopFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -689,7 +762,6 @@ func (client StreamingJobsClient) StopSender(req *http.Request) (future Streamin
 func (client StreamingJobsClient) StopResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -735,6 +807,7 @@ func (client StreamingJobsClient) Update(ctx context.Context, streamingJob Strea
 	result, err = client.UpdateResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "streamanalytics.StreamingJobsClient", "Update", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -770,8 +843,7 @@ func (client StreamingJobsClient) UpdatePreparer(ctx context.Context, streamingJ
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client StreamingJobsClient) UpdateSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // UpdateResponder handles the response to the Update request. The method always
@@ -779,7 +851,6 @@ func (client StreamingJobsClient) UpdateSender(req *http.Request) (*http.Respons
 func (client StreamingJobsClient) UpdateResponder(resp *http.Response) (result StreamingJob, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

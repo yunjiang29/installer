@@ -15,13 +15,13 @@ import (
 	"github.com/openshift/installer/pkg/asset"
 	"github.com/openshift/installer/pkg/asset/installconfig"
 	icaws "github.com/openshift/installer/pkg/asset/installconfig/aws"
-	icazure "github.com/openshift/installer/pkg/asset/installconfig/azure"
 	icgcp "github.com/openshift/installer/pkg/asset/installconfig/gcp"
 	"github.com/openshift/installer/pkg/types"
 	awstypes "github.com/openshift/installer/pkg/types/aws"
 	azuretypes "github.com/openshift/installer/pkg/types/azure"
 	baremetaltypes "github.com/openshift/installer/pkg/types/baremetal"
 	gcptypes "github.com/openshift/installer/pkg/types/gcp"
+	kubevirttypes "github.com/openshift/installer/pkg/types/kubevirt"
 	libvirttypes "github.com/openshift/installer/pkg/types/libvirt"
 	nonetypes "github.com/openshift/installer/pkg/types/none"
 	openstacktypes "github.com/openshift/installer/pkg/types/openstack"
@@ -91,12 +91,16 @@ func (d *DNS) Generate(dependencies asset.Parents) error {
 			}
 			config.Spec.PublicZone = &configv1.DNSZone{ID: strings.TrimPrefix(*zone.Id, "/hostedzone/")}
 		}
-		config.Spec.PrivateZone = &configv1.DNSZone{Tags: map[string]string{
-			fmt.Sprintf("kubernetes.io/cluster/%s", clusterID.InfraID): "owned",
-			"Name": fmt.Sprintf("%s-int", clusterID.InfraID),
-		}}
+		if hostedZone := installConfig.Config.AWS.HostedZone; hostedZone == "" {
+			config.Spec.PrivateZone = &configv1.DNSZone{Tags: map[string]string{
+				fmt.Sprintf("kubernetes.io/cluster/%s", clusterID.InfraID): "owned",
+				"Name": fmt.Sprintf("%s-int", clusterID.InfraID),
+			}}
+		} else {
+			config.Spec.PrivateZone = &configv1.DNSZone{ID: hostedZone}
+		}
 	case azuretypes.Name:
-		dnsConfig, err := icazure.NewDNSConfig()
+		dnsConfig, err := installConfig.Azure.DNSConfig()
 		if err != nil {
 			return err
 		}
@@ -108,7 +112,7 @@ func (d *DNS) Generate(dependencies asset.Parents) error {
 			}
 		}
 		config.Spec.PrivateZone = &configv1.DNSZone{
-			ID: dnsConfig.GetPrivateDNSZoneID(clusterID.InfraID+"-rg", installConfig.Config.ClusterDomain()),
+			ID: dnsConfig.GetPrivateDNSZoneID(installConfig.Config.Azure.ClusterResourceGroupName(clusterID.InfraID), installConfig.Config.ClusterDomain()),
 		}
 	case gcptypes.Name:
 		if installConfig.Config.Publish == types.ExternalPublishingStrategy {
@@ -119,7 +123,7 @@ func (d *DNS) Generate(dependencies asset.Parents) error {
 			config.Spec.PublicZone = &configv1.DNSZone{ID: zone.Name}
 		}
 		config.Spec.PrivateZone = &configv1.DNSZone{ID: fmt.Sprintf("%s-private-zone", clusterID.InfraID)}
-	case libvirttypes.Name, openstacktypes.Name, baremetaltypes.Name, nonetypes.Name, vspheretypes.Name, ovirttypes.Name:
+	case libvirttypes.Name, openstacktypes.Name, baremetaltypes.Name, nonetypes.Name, vspheretypes.Name, ovirttypes.Name, kubevirttypes.Name:
 	default:
 		return errors.New("invalid Platform")
 	}

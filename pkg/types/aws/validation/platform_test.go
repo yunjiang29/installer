@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,22 @@ func TestValidatePlatform(t *testing.T) {
 				Region: "",
 			},
 			expected: `^test-path\.region: Required value: region must be specified$`,
+		},
+		{
+			name: "hosted zone with subnets",
+			platform: &aws.Platform{
+				Region:     "us-east-1",
+				Subnets:    []string{"test-subnet"},
+				HostedZone: "test-hosted-zone",
+			},
+		},
+		{
+			name: "hosted zone without subnets",
+			platform: &aws.Platform{
+				Region:     "us-east-1",
+				HostedZone: "test-hosted-zone",
+			},
+			expected: `^test-path\.hostedZone: Invalid value: "test-hosted-zone": may not use an existing hosted zone when not using existing subnets$`,
 		},
 		{
 			name: "invalid url for service endpoint",
@@ -117,6 +134,35 @@ func TestValidatePlatform(t *testing.T) {
 			},
 			expected: `^test-path\.defaultMachinePlatform\.iops: Invalid value: -10: Storage IOPS must be positive$`,
 		},
+		{
+			name: "invalid userTags, Name key",
+			platform: &aws.Platform{
+				Region: "us-east-1",
+				UserTags: map[string]string{
+					"Name": "test-cluster",
+				},
+			},
+			expected: `^\Qtest-path.userTags[Name]: Invalid value: "test-cluster": Name key is not allowed for user defined tags\E$`,
+		},
+		{
+			name: "invalid userTags, key with kubernetes.io/cluster/",
+			platform: &aws.Platform{
+				Region: "us-east-1",
+				UserTags: map[string]string{
+					"kubernetes.io/cluster/test-cluster": "shared",
+				},
+			},
+			expected: `^\Qtest-path.userTags[kubernetes.io/cluster/test-cluster]: Invalid value: "shared": Keys with prefix 'kubernetes.io/cluster/' are not allowed for user defined tags\E$`,
+		},
+		{
+			name: "valid userTags",
+			platform: &aws.Platform{
+				Region: "us-east-1",
+				UserTags: map[string]string{
+					"app": "production",
+				},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,6 +171,82 @@ func TestValidatePlatform(t *testing.T) {
 				assert.NoError(t, err)
 			} else {
 				assert.Regexp(t, tc.expected, err)
+			}
+		})
+	}
+}
+
+func TestValidateTag(t *testing.T) {
+	cases := []struct {
+		name      string
+		key       string
+		value     string
+		expectErr bool
+	}{{
+		name:  "valid",
+		key:   "test-key",
+		value: "test-value",
+	}, {
+		name:      "invalid characters in key",
+		key:       "bad-key***",
+		value:     "test-value",
+		expectErr: true,
+	}, {
+		name:      "invalid characters in value",
+		key:       "test-key",
+		value:     "bad-value***",
+		expectErr: true,
+	}, {
+		name:      "empty key",
+		key:       "",
+		value:     "test-value",
+		expectErr: true,
+	}, {
+		name:      "empty value",
+		key:       "test-key",
+		value:     "",
+		expectErr: true,
+	}, {
+		name:      "key too long",
+		key:       strings.Repeat("a", 129),
+		value:     "test-value",
+		expectErr: true,
+	}, {
+		name:      "value too long",
+		key:       "test-key",
+		value:     strings.Repeat("a", 257),
+		expectErr: true,
+	}, {
+		name:      "key in kubernetes.io namespace",
+		key:       "kubernetes.io/cluster/some-cluster",
+		value:     "owned",
+		expectErr: true,
+	}, {
+		name:      "key in openshift.io namespace",
+		key:       "openshift.io/some-key",
+		value:     "some-value",
+		expectErr: true,
+	}, {
+		name:      "key in openshift.io subdomain namespace",
+		key:       "other.openshift.io/some-key",
+		value:     "some-value",
+		expectErr: true,
+	}, {
+		name:  "key in namespace similar to openshift.io",
+		key:   "otheropenshift.io/some-key",
+		value: "some-value",
+	}, {
+		name:  "key with openshift.io in path",
+		key:   "some-domain/openshift.io/some-key",
+		value: "some-value",
+	}}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTag(tc.key, tc.value)
+			if tc.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}

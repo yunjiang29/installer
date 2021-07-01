@@ -5,7 +5,8 @@ package openstack
 type Platform struct {
 	// Region specifies the OpenStack region where the cluster will be created.
 	// Deprecated: this value is not used by the installer.
-	Region string `json:"region"`
+	// +optional
+	DeprecatedRegion string `json:"region,omitempty"`
 
 	// DefaultMachinePlatform is the default configuration used when
 	// installing on OpenStack for machine pools which do not define their own
@@ -17,14 +18,29 @@ type Platform struct {
 	Cloud string `json:"cloud"`
 
 	// ExternalNetwork is name of the external network in your OpenStack cluster.
-	ExternalNetwork string `json:"externalNetwork"`
+	// +optional
+	ExternalNetwork string `json:"externalNetwork,omitempty"`
 
-	// FlavorName is the name of the compute flavor to use for instances in this cluster.
-	FlavorName string `json:"computeFlavor"`
+	// DeprecatedFlavorName is the name of the flavor to use for instances in this cluster.
+	// Deprecated: use FlavorName in DefaultMachinePlatform to define default flavor.
+	// +optional
+	DeprecatedFlavorName string `json:"computeFlavor,omitempty"`
 
 	// LbFloatingIP is the IP address of an available floating IP in your OpenStack cluster
 	// to associate with the OpenShift load balancer.
-	LbFloatingIP string `json:"lbFloatingIP"`
+	// Deprecated: this value has been renamed to apiFloatingIP.
+	// +optional
+	DeprecatedLbFloatingIP string `json:"lbFloatingIP,omitempty"`
+
+	// APIFloatingIP is the IP address of an available floating IP in your OpenStack cluster
+	// to associate with the OpenShift API load balancer.
+	// +optional
+	APIFloatingIP string `json:"apiFloatingIP,omitempty"`
+
+	// IngressFloatingIP is the ID of an available floating IP in your OpenStack cluster
+	// that will be associated with the OpenShift ingress port
+	// +optional
+	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
 
 	// ExternalDNS holds the IP addresses of dns servers that will
 	// be added to the dns resolution of all instances in the cluster.
@@ -33,16 +49,25 @@ type Platform struct {
 
 	// TrunkSupport holds a `0` or `1` value that indicates whether or not to use trunk ports
 	// in your OpenShift cluster.
-	TrunkSupport string `json:"trunkSupport"`
+	// Deprecated: this value is set by the installer automatically.
+	// +optional
+	DeprecatedTrunkSupport string `json:"trunkSupport,omitempty"`
 
 	// OctaviaSupport holds a `0` or `1` value that indicates whether your OpenStack
 	// cluster supports Octavia Loadbalancing.
-	OctaviaSupport string `json:"octaviaSupport"`
+	// Deprecated: this value is set by the installer automatically.
+	// +optional
+	DeprecatedOctaviaSupport string `json:"octaviaSupport,omitempty"`
 
 	// ClusterOSImage is either a URL with `http(s)` or `file` scheme to override
 	// the default OS image for cluster nodes, or an existing Glance image name.
 	// +optional
 	ClusterOSImage string `json:"clusterOSImage,omitempty"`
+
+	// ClusterOSImageProperties is a list of properties to be added to the metadata of the uploaded Glance ClusterOSImage.
+	// Default: the default is to not set any properties.
+	// +optional
+	ClusterOSImageProperties map[string]string `json:"clusterOSImageProperties,omitempty"`
 
 	// APIVIP is the static IP on the nodes subnet that the api port for openshift will be assigned
 	// Default: will be set to the 5 on the first entry in the machineNetwork CIDR

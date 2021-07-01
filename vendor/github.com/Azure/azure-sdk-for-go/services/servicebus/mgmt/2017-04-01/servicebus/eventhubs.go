@@ -36,7 +36,8 @@ func NewEventHubsClient(subscriptionID string) EventHubsClient {
 	return NewEventHubsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewEventHubsClientWithBaseURI creates an instance of the EventHubsClient client.
+// NewEventHubsClientWithBaseURI creates an instance of the EventHubsClient client using a custom endpoint.  Use this
+// when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewEventHubsClientWithBaseURI(baseURI string, subscriptionID string) EventHubsClient {
 	return EventHubsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -83,6 +84,11 @@ func (client EventHubsClient) ListByNamespace(ctx context.Context, resourceGroup
 	result.ehlr, err = client.ListByNamespaceResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "servicebus.EventHubsClient", "ListByNamespace", resp, "Failure responding to request")
+		return
+	}
+	if result.ehlr.hasNextLink() && result.ehlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -112,8 +118,7 @@ func (client EventHubsClient) ListByNamespacePreparer(ctx context.Context, resou
 // ListByNamespaceSender sends the ListByNamespace request. The method will close the
 // http.Response Body if it receives an error.
 func (client EventHubsClient) ListByNamespaceSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByNamespaceResponder handles the response to the ListByNamespace request. The method always
@@ -121,7 +126,6 @@ func (client EventHubsClient) ListByNamespaceSender(req *http.Request) (*http.Re
 func (client EventHubsClient) ListByNamespaceResponder(resp *http.Response) (result EventHubListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

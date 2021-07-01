@@ -1,39 +1,46 @@
 package ovirt
 
 import (
+	"github.com/AlecAivazis/survey/v2"
 	ovirtsdk4 "github.com/ovirt/go-ovirt"
-	"gopkg.in/AlecAivazis/survey.v1"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/openshift/installer/pkg/types/ovirt"
 )
+
+const platformValidationMaxTries = 3
 
 // Platform collects ovirt-specific configuration.
 func Platform() (*ovirt.Platform, error) {
 	p := ovirt.Platform{}
 
+	var c *ovirtsdk4.Connection
+
 	ovirtConfig, err := NewConfig()
-	if err != nil {
-		ovirtConfig, err = askCredentials()
+	for tries := 0; tries < platformValidationMaxTries; tries++ {
 		if err != nil {
-			return nil, err
+			ovirtConfig, err = engineSetup()
+			if err != nil {
+				logrus.Error(errors.Wrap(err, "oVirt configuration failed"))
+			}
 		}
-		defer ovirtConfig.Save()
+
+		if err == nil {
+			c, err = ovirtConfig.getValidatedConnection()
+			if err != nil {
+				logrus.Error(errors.Wrap(err, "failed to validate oVirt configuration"))
+			} else {
+				break
+			}
+		}
 	}
-
-	c, err := ovirtsdk4.NewConnectionBuilder().
-		URL(ovirtConfig.URL).
-		Username(ovirtConfig.Username).
-		Password(ovirtConfig.Password).
-		CAFile(ovirtConfig.CAFile).
-		Insecure(ovirtConfig.Insecure).
-		Build()
-
 	if err != nil {
-		return nil, err
+		// Last error is not nil, we don't have a valid config.
+		return nil, errors.Wrap(err, "maximum retries for configuration exhausted")
 	}
 	defer c.Close()
-	err = c.Test()
-	if err != nil {
+	if err = ovirtConfig.Save(); err != nil {
 		return nil, err
 	}
 
@@ -68,21 +75,7 @@ func Platform() (*ovirt.Platform, error) {
 		},
 	}, &p.APIVIP)
 	if err != nil {
-		return nil, err
-	}
-
-	err = survey.Ask([]*survey.Question{
-		{
-			Prompt: &survey.Input{
-				Message: "Internal DNS virtual IP",
-				Help:    "This is the virtual IP address that will be used to address the DNS server internal to the cluster. Make sure the IP address is not in use.",
-				Default: "",
-			},
-			Validate: survey.ComposeValidators(survey.Required),
-		},
-	}, &p.DNSVIP)
-	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed UserInput")
 	}
 
 	err = survey.Ask([]*survey.Question{
@@ -96,7 +89,7 @@ func Platform() (*ovirt.Platform, error) {
 		},
 	}, &p.IngressVIP)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed UserInput")
 	}
 
 	return &p, nil

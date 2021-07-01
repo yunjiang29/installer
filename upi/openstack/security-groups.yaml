@@ -43,6 +43,7 @@
     os_security_group_rule:
       security_group: "{{ os_sg_master }}"
       protocol: tcp
+      remote_ip_prefix: "{{ os_subnet_range }}"
       port_range_min: 22
       port_range_max: 22
 
@@ -61,14 +62,6 @@
       protocol: udp
       port_range_min: 53
       port_range_max: 53
-
-  - name: 'Create master-sg rule "mDNS"'
-    os_security_group_rule:
-      security_group: "{{ os_sg_master }}"
-      remote_ip_prefix: "{{ os_subnet_range }}"
-      protocol: udp
-      port_range_min: 5353
-      port_range_max: 5353
 
   - name: 'Create master-sg rule "OpenShift API"'
     os_security_group_rule:
@@ -92,6 +85,22 @@
       remote_ip_prefix: "{{ os_subnet_range }}"
       port_range_min: 6081
       port_range_max: 6081
+
+  - name: 'Create master-sg rule "IPsec IKE"'
+    os_security_group_rule:
+      security_group: "{{ os_sg_master }}"
+      protocol: udp
+      remote_ip_prefix: "{{ os_subnet_range }}"
+      port_range_min: 500
+      port_range_max: 500
+
+  - name: 'Create master-sg rule "IPsec NAT-T"'
+    os_security_group_rule:
+      security_group: "{{ os_sg_master }}"
+      protocol: udp
+      remote_ip_prefix: "{{ os_subnet_range }}"
+      port_range_min: 4500
+      port_range_max: 4500
 
   - name: 'Create master-sg rule "ovndb"'
     os_security_group_rule:
@@ -181,16 +190,9 @@
     os_security_group_rule:
       security_group: "{{ os_sg_worker }}"
       protocol: tcp
+      remote_ip_prefix: "{{ os_subnet_range }}"
       port_range_min: 22
       port_range_max: 22
-
-  - name: 'Create worker-sg rule "mDNS"'
-    os_security_group_rule:
-      security_group: "{{ os_sg_worker }}"
-      protocol: udp
-      remote_ip_prefix: "{{ os_subnet_range }}"
-      port_range_min: 5353
-      port_range_max: 5353
 
   - name: 'Create worker-sg rule "Ingress HTTP"'
     os_security_group_rule:
@@ -229,6 +231,22 @@
       remote_ip_prefix: "{{ os_subnet_range }}"
       port_range_min: 6081
       port_range_max: 6081
+
+  - name: 'Create worker-sg rule "IPsec IKE"'
+    os_security_group_rule:
+      security_group: "{{ os_sg_worker }}"
+      protocol: udp
+      remote_ip_prefix: "{{ os_subnet_range }}"
+      port_range_min: 500
+      port_range_max: 500
+
+  - name: 'Create worker-sg rule "IPsec NAT-T"'
+    os_security_group_rule:
+      security_group: "{{ os_sg_worker }}"
+      protocol: udp
+      remote_ip_prefix: "{{ os_subnet_range }}"
+      port_range_min: 4500
+      port_range_max: 4500
 
   - name: 'Create worker-sg rule "worker ingress internal (TCP)"'
     os_security_group_rule:

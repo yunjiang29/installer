@@ -39,20 +39,17 @@ variable "api_int_ip" {
   type = string
 }
 
-variable "node_dns_ip" {
-  type = string
-}
-
 variable "external_network" {
   type = string
+  default = ""
 }
 
 variable "private_network_id" {
   type = string
 }
 
-variable "master_sg_id" {
-  type = string
+variable "master_sg_ids" {
+  type = list(string)
 }
 
 variable "nodes_subnet_id" {
@@ -75,4 +72,19 @@ variable "root_volume_size" {
 variable "root_volume_type" {
   type = string
   description = "The type of volume for the root block device."
+}
+
+variable "zone" {
+  type = string
+  description = "Availability Zone to schedule the bootstrap node onto."
+}
+
+variable "root_volume_zone" {
+  type = string
+  description = "Availability Zone to schedule the bootstrap root volume onto."
+}
+
+variable "additional_network_ids" {
+  type = list(string)
+  description = "IDs of additional networks for the bootstrap node."
 }

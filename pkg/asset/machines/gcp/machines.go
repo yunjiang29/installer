@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	gcpprovider "github.com/openshift/cluster-api-provider-gcp/pkg/apis/gcpprovider/v1beta1"
-	machineapi "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	machineapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,10 +69,26 @@ func Machines(clusterID string, config *types.InstallConfig, pool *types.Machine
 
 func provider(clusterID string, platform *gcp.Platform, mpool *gcp.MachinePool, osImage string, azIdx int, role, userDataSecret string) (*gcpprovider.GCPMachineProviderSpec, error) {
 	az := mpool.Zones[azIdx]
-
+	if len(platform.Licenses) > 0 {
+		osImage = fmt.Sprintf("%s-rhcos-image", clusterID)
+	}
 	network, subnetwork, err := getNetworks(platform, clusterID, role)
 	if err != nil {
 		return nil, err
+	}
+
+	var encryptionKey *gcpprovider.GCPEncryptionKeyReference
+
+	if mpool.OSDisk.EncryptionKey != nil {
+		encryptionKey = &gcpprovider.GCPEncryptionKeyReference{
+			KMSKey: &gcpprovider.GCPKMSKeyReference{
+				Name:      mpool.OSDisk.EncryptionKey.KMSKey.Name,
+				KeyRing:   mpool.OSDisk.EncryptionKey.KMSKey.KeyRing,
+				ProjectID: mpool.OSDisk.EncryptionKey.KMSKey.ProjectID,
+				Location:  mpool.OSDisk.EncryptionKey.KMSKey.Location,
+			},
+			KMSKeyServiceAccount: mpool.OSDisk.EncryptionKey.KMSKeyServiceAccount,
+		}
 	}
 
 	return &gcpprovider.GCPMachineProviderSpec{
@@ -83,11 +99,12 @@ func provider(clusterID string, platform *gcp.Platform, mpool *gcp.MachinePool, 
 		UserDataSecret:    &corev1.LocalObjectReference{Name: userDataSecret},
 		CredentialsSecret: &corev1.LocalObjectReference{Name: "gcp-cloud-credentials"},
 		Disks: []*gcpprovider.GCPDisk{{
-			AutoDelete: true,
-			Boot:       true,
-			SizeGb:     mpool.OSDisk.DiskSizeGB,
-			Type:       mpool.OSDisk.DiskType,
-			Image:      fmt.Sprintf("%s-rhcos-image", clusterID),
+			AutoDelete:    true,
+			Boot:          true,
+			SizeGb:        mpool.OSDisk.DiskSizeGB,
+			Type:          mpool.OSDisk.DiskType,
+			Image:         osImage,
+			EncryptionKey: encryptionKey,
 		}},
 		NetworkInterfaces: []*gcpprovider.GCPNetworkInterface{{
 			Network:    network,

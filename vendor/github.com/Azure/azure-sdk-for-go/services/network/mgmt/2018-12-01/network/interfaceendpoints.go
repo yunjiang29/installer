@@ -35,7 +35,9 @@ func NewInterfaceEndpointsClient(subscriptionID string) InterfaceEndpointsClient
 	return NewInterfaceEndpointsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewInterfaceEndpointsClientWithBaseURI creates an instance of the InterfaceEndpointsClient client.
+// NewInterfaceEndpointsClientWithBaseURI creates an instance of the InterfaceEndpointsClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewInterfaceEndpointsClientWithBaseURI(baseURI string, subscriptionID string) InterfaceEndpointsClient {
 	return InterfaceEndpointsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -64,7 +66,7 @@ func (client InterfaceEndpointsClient) CreateOrUpdate(ctx context.Context, resou
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -97,13 +99,38 @@ func (client InterfaceEndpointsClient) CreateOrUpdatePreparer(ctx context.Contex
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) CreateOrUpdateSender(req *http.Request) (future InterfaceEndpointsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InterfaceEndpointsClient) (ie InterfaceEndpoint, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.InterfaceEndpointsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		ie.Response.Response, err = future.GetResult(sender)
+		if ie.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && ie.Response.Response.StatusCode != http.StatusNoContent {
+			ie, err = client.CreateOrUpdateResponder(ie.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsCreateOrUpdateFuture", "Result", ie.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -112,7 +139,6 @@ func (client InterfaceEndpointsClient) CreateOrUpdateSender(req *http.Request) (
 func (client InterfaceEndpointsClient) CreateOrUpdateResponder(resp *http.Response) (result InterfaceEndpoint, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -143,7 +169,7 @@ func (client InterfaceEndpointsClient) Delete(ctx context.Context, resourceGroup
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -174,13 +200,28 @@ func (client InterfaceEndpointsClient) DeletePreparer(ctx context.Context, resou
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) DeleteSender(req *http.Request) (future InterfaceEndpointsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InterfaceEndpointsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.InterfaceEndpointsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -189,7 +230,6 @@ func (client InterfaceEndpointsClient) DeleteSender(req *http.Request) (future I
 func (client InterfaceEndpointsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -228,6 +268,7 @@ func (client InterfaceEndpointsClient) Get(ctx context.Context, resourceGroupNam
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -260,8 +301,7 @@ func (client InterfaceEndpointsClient) GetPreparer(ctx context.Context, resource
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -269,7 +309,6 @@ func (client InterfaceEndpointsClient) GetSender(req *http.Request) (*http.Respo
 func (client InterfaceEndpointsClient) GetResponder(resp *http.Response) (result InterfaceEndpoint, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -308,6 +347,11 @@ func (client InterfaceEndpointsClient) List(ctx context.Context, resourceGroupNa
 	result.ielr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.ielr.hasNextLink() && result.ielr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -336,8 +380,7 @@ func (client InterfaceEndpointsClient) ListPreparer(ctx context.Context, resourc
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -345,7 +388,6 @@ func (client InterfaceEndpointsClient) ListSender(req *http.Request) (*http.Resp
 func (client InterfaceEndpointsClient) ListResponder(resp *http.Response) (result InterfaceEndpointListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -419,6 +461,11 @@ func (client InterfaceEndpointsClient) ListBySubscription(ctx context.Context) (
 	result.ielr, err = client.ListBySubscriptionResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "ListBySubscription", resp, "Failure responding to request")
+		return
+	}
+	if result.ielr.hasNextLink() && result.ielr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -446,8 +493,7 @@ func (client InterfaceEndpointsClient) ListBySubscriptionPreparer(ctx context.Co
 // ListBySubscriptionSender sends the ListBySubscription request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) ListBySubscriptionSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListBySubscriptionResponder handles the response to the ListBySubscription request. The method always
@@ -455,7 +501,6 @@ func (client InterfaceEndpointsClient) ListBySubscriptionSender(req *http.Reques
 func (client InterfaceEndpointsClient) ListBySubscriptionResponder(resp *http.Response) (result InterfaceEndpointListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

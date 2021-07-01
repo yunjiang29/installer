@@ -49,6 +49,86 @@ func TestClusterName(t *testing.T) {
 	}
 }
 
+func TestClusterName1035(t *testing.T) {
+	maxSizeName := "a" + strings.Repeat("123456789.", 5) + "123"
+
+	cases := []struct {
+		name        string
+		clusterName string
+		valid       bool
+	}{
+		{"empty", "", false},
+		{"only whitespace", " ", false},
+		{"single lowercase", "a", true},
+		{"single uppercase", "A", false},
+		{"contains whitespace", "abc D", false},
+		{"single number", "1", false},
+		{"single dot", ".", false},
+		{"ends with dot", "a.", false},
+		{"starts with dot", ".a", false},
+		{"multiple labels", "a.a", true},
+		{"starts with dash", "-a", false},
+		{"ends with dash", "a-", false},
+		{"label starts with dash", "a.-a", false},
+		{"label ends with dash", "a-.a", false},
+		{"invalid percent", "a%a", false},
+		{"only non-ascii", "日本語", false},
+		{"contains non-ascii", "a日本語a", false},
+		{"max size", maxSizeName, true},
+		{"too long", maxSizeName + "a", false},
+		{"URLs", "https://hello.openshift.org", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ClusterName1035(tc.clusterName)
+			if tc.valid {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestVCenter(t *testing.T) {
+	cases := []struct {
+		name        string
+		clusterName string
+		valid       bool
+	}{
+		{"empty", "", false},
+		{"only whitespace", " ", false},
+		{"single lowercase", "a", true},
+		{"single uppercase", "A", false},
+		{"contains whitespace", "abc D", false},
+		{"single number", "1", false},
+		{"single dot", ".", false},
+		{"ends with dot", "a.", false},
+		{"starts with dot", ".a", false},
+		{"multiple labels", "a.a", true},
+		{"starts with dash", "-a", false},
+		{"ends with dash", "a-", false},
+		{"label starts with dash", "a.-a", false},
+		{"label ends with dash", "a-.a", false},
+		{"invalid percent", "a%a", false},
+		{"only non-ascii", "日本語", false},
+		{"contains non-ascii", "a日本語a", false},
+		{"URLs", "https://hello.openshift.org", false},
+		{"IP", "192.168.1.1", true},
+		{"invalid IP", "192.168.1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Host(tc.clusterName)
+			if tc.valid {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestSubnetCIDR(t *testing.T) {
 	cases := []struct {
 		cidr   string
@@ -61,8 +141,6 @@ func TestSubnetCIDR(t *testing.T) {
 		{"1.2.3.4/32", ""},
 		{"0:0:0:0:0:1:102:304/116", "invalid network address. got ::1:102:304/116, expecting ::1:102:0/116"},
 		{"0:0:0:0:0:ffff:102:304/116", "invalid network address. got 1.2.3.4/20, expecting 1.2.0.0/20"},
-		{"172.17.0.0/20", "overlaps with default Docker Bridge subnet (172.17.0.0/20)"},
-		{"172.0.0.0/8", "overlaps with default Docker Bridge subnet (172.0.0.0/8)"},
 		{"255.255.255.255/1", "invalid network address. got 255.255.255.255/1, expecting 128.0.0.0/1"},
 		{"255.255.255.255/32", ""},
 	}
@@ -454,12 +532,6 @@ CNA1OOo=
 Invalid data here
 `
 
-const invalidCertificate = `-----BEGIN CERTIFICATE-----
-MIIF2zCCA8OgAwIBAgICEAAwDQYJKoZIhvcNAQELBQAwgYExCzAJBgNVBAYTAlVT
-MRcwFQYDVQQIDA5Ob3J0aCBDYXJvbGluYTEQMA4GA1UEBwwHUmFsZWlnaDEUMBIG
------END CERTIFICATE-----
-`
-
 func TestAdditionalTrustBundle(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -567,6 +639,44 @@ func TestURI(t *testing.T) {
 				assert.NoError(t, err)
 			} else {
 				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestMAC(t *testing.T) {
+	cases := []struct {
+		name     string
+		addr     string
+		expected string
+	}{
+		{
+			name: "valid_mac",
+			addr: "7A:CE:E3:29:35:6F",
+		},
+		{
+			name:     "invalid_multicast",
+			addr:     "7D:CE:E3:29:35:6F",
+			expected: "expected unicast mac address",
+		},
+		{
+			name:     "invalid_infiniband",
+			addr:     "00-00-00-00-fe-80-00-00-00-00-00-00-02-00-5e-10-00-00-00-01",
+			expected: "invalid MAC address",
+		},
+		{
+			name:     "invalid_mac",
+			addr:     "this is a bad mac",
+			expected: "invalid MAC address",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := MAC(tc.addr)
+			if tc.expected == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Regexp(t, tc.expected, err)
 			}
 		})
 	}

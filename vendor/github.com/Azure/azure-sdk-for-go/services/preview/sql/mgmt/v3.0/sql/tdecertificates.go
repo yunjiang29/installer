@@ -38,7 +38,8 @@ func NewTdeCertificatesClient(subscriptionID string) TdeCertificatesClient {
 	return NewTdeCertificatesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewTdeCertificatesClientWithBaseURI creates an instance of the TdeCertificatesClient client.
+// NewTdeCertificatesClientWithBaseURI creates an instance of the TdeCertificatesClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewTdeCertificatesClientWithBaseURI(baseURI string, subscriptionID string) TdeCertificatesClient {
 	return TdeCertificatesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -75,7 +76,7 @@ func (client TdeCertificatesClient) Create(ctx context.Context, resourceGroupNam
 
 	result, err = client.CreateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.TdeCertificatesClient", "Create", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.TdeCertificatesClient", "Create", nil, "Failure sending request")
 		return
 	}
 
@@ -108,13 +109,28 @@ func (client TdeCertificatesClient) CreatePreparer(ctx context.Context, resource
 // CreateSender sends the Create request. The method will close the
 // http.Response Body if it receives an error.
 func (client TdeCertificatesClient) CreateSender(req *http.Request) (future TdeCertificatesCreateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client TdeCertificatesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.TdeCertificatesCreateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.TdeCertificatesCreateFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -123,7 +139,6 @@ func (client TdeCertificatesClient) CreateSender(req *http.Request) (future TdeC
 func (client TdeCertificatesClient) CreateResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp

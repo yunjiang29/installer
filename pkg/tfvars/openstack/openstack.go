@@ -10,55 +10,76 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/identity/v3/tokens"
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/attributestags"
 	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 	"github.com/openshift/installer/pkg/rhcos"
 	"github.com/openshift/installer/pkg/tfvars/internal/cache"
+	"github.com/openshift/installer/pkg/types"
 	types_openstack "github.com/openshift/installer/pkg/types/openstack"
+	openstackdefaults "github.com/openshift/installer/pkg/types/openstack/defaults"
 	"github.com/pkg/errors"
 
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/apis/openstackproviderconfig/v1alpha1"
 )
 
 type config struct {
-	BaseImageName              string   `json:"openstack_base_image_name,omitempty"`
-	ExternalNetwork            string   `json:"openstack_external_network,omitempty"`
-	Cloud                      string   `json:"openstack_credentials_cloud,omitempty"`
-	FlavorName                 string   `json:"openstack_master_flavor_name,omitempty"`
-	LbFloatingIP               string   `json:"openstack_lb_floating_ip,omitempty"`
-	APIVIP                     string   `json:"openstack_api_int_ip,omitempty"`
-	DNSVIP                     string   `json:"openstack_node_dns_ip,omitempty"`
-	IngressVIP                 string   `json:"openstack_ingress_ip,omitempty"`
-	TrunkSupport               string   `json:"openstack_trunk_support,omitempty"`
-	OctaviaSupport             string   `json:"openstack_octavia_support,omitempty"`
-	RootVolumeSize             int      `json:"openstack_master_root_volume_size,omitempty"`
-	RootVolumeType             string   `json:"openstack_master_root_volume_type,omitempty"`
-	BootstrapShim              string   `json:"openstack_bootstrap_shim_ignition,omitempty"`
-	ExternalDNS                []string `json:"openstack_external_dns,omitempty"`
-	MasterServerGroupID        string   `json:"openstack_master_server_group_id,omitempty"`
-	AdditionalNetworkIDs       []string `json:"openstack_additional_network_ids,omitempty"`
-	AdditionalSecurityGroupIDs []string `json:"openstack_master_extra_sg_ids,omitempty"`
-	MachinesSubnet             string   `json:"openstack_machines_subnet_id,omitempty"`
-	MachinesNetwork            string   `json:"openstack_machines_network_id,omitempty"`
+	BaseImageName                    string   `json:"openstack_base_image_name,omitempty"`
+	ExternalNetwork                  string   `json:"openstack_external_network,omitempty"`
+	Cloud                            string   `json:"openstack_credentials_cloud,omitempty"`
+	FlavorName                       string   `json:"openstack_master_flavor_name,omitempty"`
+	APIFloatingIP                    string   `json:"openstack_api_floating_ip,omitempty"`
+	IngressFloatingIP                string   `json:"openstack_ingress_floating_ip,omitempty"`
+	APIVIP                           string   `json:"openstack_api_int_ip,omitempty"`
+	IngressVIP                       string   `json:"openstack_ingress_ip,omitempty"`
+	TrunkSupport                     bool     `json:"openstack_trunk_support,omitempty"`
+	OctaviaSupport                   bool     `json:"openstack_octavia_support,omitempty"`
+	RootVolumeSize                   int      `json:"openstack_master_root_volume_size,omitempty"`
+	RootVolumeType                   string   `json:"openstack_master_root_volume_type,omitempty"`
+	BootstrapShim                    string   `json:"openstack_bootstrap_shim_ignition,omitempty"`
+	ExternalDNS                      []string `json:"openstack_external_dns,omitempty"`
+	MasterServerGroupName            string   `json:"openstack_master_server_group_name,omitempty"`
+	AdditionalNetworkIDs             []string `json:"openstack_additional_network_ids,omitempty"`
+	AdditionalSecurityGroupIDs       []string `json:"openstack_master_extra_sg_ids,omitempty"`
+	MachinesSubnet                   string   `json:"openstack_machines_subnet_id,omitempty"`
+	MachinesNetwork                  string   `json:"openstack_machines_network_id,omitempty"`
+	MasterAvailabilityZones          []string `json:"openstack_master_availability_zones,omitempty"`
+	MasterRootVolumeAvalabilityZones []string `json:"openstack_master_root_volume_availability_zones,omitempty"`
 }
 
 // TFVars generates OpenStack-specific Terraform variables.
-func TFVars(masterConfig *v1alpha1.OpenstackProviderSpec, cloud string, externalNetwork string, externalDNS []string, lbFloatingIP string, apiVIP string, dnsVIP string, ingressVIP string, trunkSupport string, octaviaSupport string, baseImage string, infraID string, userCA string, bootstrapIgn string, mpool *types_openstack.MachinePool, machinesSubnet string) ([]byte, error) {
+func TFVars(masterConfigs []*v1alpha1.OpenstackProviderSpec, cloud string, externalNetwork string, externalDNS []string, apiFloatingIP string, ingressFloatingIP string, apiVIP string, ingressVIP string, baseImage string, baseImageProperties map[string]string, infraID string, userCA string, bootstrapIgn string, mpool, defaultmpool *types_openstack.MachinePool, machinesSubnet string, proxy *types.Proxy) ([]byte, error) {
+	zones := []string{}
+	seen := map[string]bool{}
+	for _, config := range masterConfigs {
+		if !seen[config.AvailabilityZone] {
+			zones = append(zones, config.AvailabilityZone)
+			seen[config.AvailabilityZone] = true
+		}
+	}
 
 	cfg := &config{
-		ExternalNetwork: externalNetwork,
-		Cloud:           cloud,
-		FlavorName:      masterConfig.Flavor,
-		LbFloatingIP:    lbFloatingIP,
-		APIVIP:          apiVIP,
-		DNSVIP:          dnsVIP,
-		IngressVIP:      ingressVIP,
-		ExternalDNS:     externalDNS,
-		TrunkSupport:    trunkSupport,
-		OctaviaSupport:  octaviaSupport,
-		MachinesSubnet:  machinesSubnet,
+		ExternalNetwork:         externalNetwork,
+		Cloud:                   cloud,
+		FlavorName:              masterConfigs[0].Flavor,
+		APIFloatingIP:           apiFloatingIP,
+		IngressFloatingIP:       ingressFloatingIP,
+		APIVIP:                  apiVIP,
+		IngressVIP:              ingressVIP,
+		ExternalDNS:             externalDNS,
+		MachinesSubnet:          machinesSubnet,
+		MasterAvailabilityZones: zones,
+	}
+
+	if defaultmpool != nil && defaultmpool.RootVolume != nil {
+		cfg.MasterRootVolumeAvalabilityZones = defaultmpool.RootVolume.Zones
+	}
+	if mpool != nil && mpool.RootVolume != nil && mpool.RootVolume.Zones != nil {
+		cfg.MasterRootVolumeAvalabilityZones = mpool.RootVolume.Zones
+	}
+
+	serviceCatalog, err := getServiceCatalog(cloud)
+	if err != nil {
+		return nil, errors.Errorf("Could not retrieve service catalog: %v", err)
 	}
 
 	// Normally baseImage contains a URL that we will use to create a new Glance image, but for testing
@@ -91,20 +112,18 @@ func TFVars(masterConfig *v1alpha1.OpenstackProviderSpec, cloud string, external
 			return nil, errors.Errorf("Unsupported URL scheme: '%v'", url.Scheme)
 		}
 
-		err = uploadBaseImage(cloud, localFilePath, imageName, infraID)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Not a URL -> use baseImage value as an overridden Glance image name.
-		// Need to check if this image exists and there are no other images with this name.
-		err := validateOverriddenImageName(imageName, cloud)
+		err = uploadBaseImage(cloud, localFilePath, imageName, infraID, baseImageProperties)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	glancePublicURL, err := getGlancePublicURL(cloud)
+	clientConfigCloud, err := clientconfig.GetCloudFromYAML(openstackdefaults.DefaultClientOpts(cloud))
+	if err != nil {
+		return nil, err
+	}
+
+	glancePublicURL, err := getGlancePublicURL(serviceCatalog, clientConfigCloud.RegionName)
 	if err != nil {
 		return nil, err
 	}
@@ -120,32 +139,40 @@ func TFVars(masterConfig *v1alpha1.OpenstackProviderSpec, cloud string, external
 	}
 
 	bootstrapConfigURL := fmt.Sprintf("%s%s", glancePublicURL, configLocation)
-	userCAIgnition, err := generateIgnitionShim(userCA, infraID, bootstrapConfigURL, tokenID)
+	userCAIgnition, err := generateIgnitionShim(userCA, infraID, bootstrapConfigURL, tokenID, proxy)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg.BootstrapShim = userCAIgnition
+	masterConfig := masterConfigs[0]
+
+	cfg.TrunkSupport = masterConfig.Trunk
+
+	cfg.OctaviaSupport, err = isOctaviaSupported(serviceCatalog)
+	if err != nil {
+		return nil, err
+	}
 
 	if masterConfig.RootVolume != nil {
 		cfg.RootVolumeSize = masterConfig.RootVolume.Size
 		cfg.RootVolumeType = masterConfig.RootVolume.VolumeType
 	}
 
-	cfg.MasterServerGroupID = masterConfig.ServerGroupID
+	cfg.MasterServerGroupName = masterConfig.ServerGroupName
+
+	if masterConfig.ServerGroupID != "" {
+		return nil, errors.Errorf("ServerGroupID is not implemented in the Installer. Please use ServerGroupName for automatic creation of the Control Plane server group.")
+	}
 
 	cfg.AdditionalNetworkIDs = []string{}
-	if mpool.AdditionalNetworkIDs != nil {
-		for _, networkID := range mpool.AdditionalNetworkIDs {
-			cfg.AdditionalNetworkIDs = append(cfg.AdditionalNetworkIDs, networkID)
-		}
+	if mpool != nil {
+		cfg.AdditionalNetworkIDs = append(cfg.AdditionalNetworkIDs, mpool.AdditionalNetworkIDs...)
 	}
 
 	cfg.AdditionalSecurityGroupIDs = []string{}
-	if mpool.AdditionalSecurityGroupIDs != nil {
-		for _, sgID := range mpool.AdditionalSecurityGroupIDs {
-			cfg.AdditionalSecurityGroupIDs = append(cfg.AdditionalSecurityGroupIDs, sgID)
-		}
+	if mpool != nil {
+		cfg.AdditionalSecurityGroupIDs = append(cfg.AdditionalSecurityGroupIDs, mpool.AdditionalSecurityGroupIDs...)
 	}
 
 	if machinesSubnet != "" {
@@ -153,53 +180,9 @@ func TFVars(masterConfig *v1alpha1.OpenstackProviderSpec, cloud string, external
 		if err != nil {
 			return nil, err
 		}
-
-		// Make sure that the network has the primary cluster network tag.
-		// In the case of multiple networks this tag is required for
-		// cluster-api-provider-openstack to define which ip address to set as
-		// the primary one.
-		err = setNetworkTag(cloud, cfg.MachinesNetwork, infraID+"-primaryClusterNetwork")
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return json.MarshalIndent(cfg, "", "  ")
-}
-
-func validateOverriddenImageName(imageName, cloud string) error {
-	opts := &clientconfig.ClientOpts{
-		Cloud: cloud,
-	}
-
-	client, err := clientconfig.NewServiceClient("image", opts)
-	if err != nil {
-		return err
-	}
-
-	listOpts := images.ListOpts{
-		Name: imageName,
-	}
-
-	allPages, err := images.List(client, listOpts).AllPages()
-	if err != nil {
-		return err
-	}
-
-	allImages, err := images.ExtractImages(allPages)
-	if err != nil {
-		return err
-	}
-
-	if len(allImages) == 0 {
-		return errors.Errorf("image '%v' doesn't exist", imageName)
-	}
-
-	if len(allImages) > 1 {
-		return errors.Errorf("there's more than one image with the name '%v'", imageName)
-	}
-
-	return nil
 }
 
 // We need to obtain Glance public endpoint that will be used by Ignition to download bootstrap ignition files.
@@ -215,15 +198,11 @@ func validateOverriddenImageName(imageName, cloud string) error {
 // 2. In getGlancePublicURL we iterate through the catalog and find "public" endpoint for "image".
 
 // getGlancePublicURL obtains Glance public endpoint URL
-func getGlancePublicURL(cloud string) (string, error) {
-	serviceCatalog, err := getServiceCatalog(cloud)
-	if err != nil {
-		return "", err
-	}
-
+func getGlancePublicURL(serviceCatalog *tokens.ServiceCatalog, region string) (string, error) {
 	glancePublicURL, err := openstack.V3EndpointURL(serviceCatalog, gophercloud.EndpointOpts{
 		Type:         "image",
 		Availability: gophercloud.AvailabilityPublic,
+		Region:       region,
 	})
 	if err != nil {
 		return "", errors.Errorf("cannot retrieve Glance URL from the service catalog: %v", err)
@@ -234,11 +213,7 @@ func getGlancePublicURL(cloud string) (string, error) {
 
 // getServiceCatalog fetches OpenStack service catalog with service endpoints
 func getServiceCatalog(cloud string) (*tokens.ServiceCatalog, error) {
-	opts := &clientconfig.ClientOpts{
-		Cloud: cloud,
-	}
-
-	conn, err := clientconfig.NewServiceClient("identity", opts)
+	conn, err := clientconfig.NewServiceClient("identity", openstackdefaults.DefaultClientOpts(cloud))
 	if err != nil {
 		return nil, err
 	}
@@ -259,11 +234,7 @@ func getServiceCatalog(cloud string) (*tokens.ServiceCatalog, error) {
 
 // getNetworkFromSubnet looks up a subnet in openstack and returns the ID of the network it's a part of
 func getNetworkFromSubnet(cloud string, subnetID string) (string, error) {
-	opts := &clientconfig.ClientOpts{
-		Cloud: cloud,
-	}
-
-	networkClient, err := clientconfig.NewServiceClient("network", opts)
+	networkClient, err := clientconfig.NewServiceClient("network", openstackdefaults.DefaultClientOpts(cloud))
 	if err != nil {
 		return "", err
 	}
@@ -276,21 +247,18 @@ func getNetworkFromSubnet(cloud string, subnetID string) (string, error) {
 	return subnet.NetworkID, nil
 }
 
-// setNetworkTag sets a tag for the network
-func setNetworkTag(cloud string, networkID string, networkTag string) error {
-	opts := &clientconfig.ClientOpts{
-		Cloud: cloud,
-	}
-
-	networkClient, err := clientconfig.NewServiceClient("network", opts)
+func isOctaviaSupported(serviceCatalog *tokens.ServiceCatalog) (bool, error) {
+	_, err := openstack.V3EndpointURL(serviceCatalog, gophercloud.EndpointOpts{
+		Type:         "load-balancer",
+		Name:         "octavia",
+		Availability: gophercloud.AvailabilityPublic,
+	})
 	if err != nil {
-		return err
+		if _, ok := err.(*gophercloud.ErrEndpointNotFound); ok {
+			return false, nil
+		}
+		return false, err
 	}
 
-	err = attributestags.Add(networkClient, "networks", networkID, networkTag).ExtractErr()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return true, nil
 }

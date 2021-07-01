@@ -11,15 +11,15 @@
   gather_facts: no
 
   tasks:
-  - name: 'Create the cluster network'
+  - name: 'Create the primary cluster network'
     os_network:
       name: "{{ os_network }}"
 
-  - name: 'Set the cluster network tag'
+  - name: 'Set tags on the  primary cluster network'
     command:
-      cmd: "openstack network set --tag {{ cluster_id_tag }} {{ os_network }}"
+      cmd: "openstack network set --tag {{ primary_cluster_network_tag }} --tag {{ cluster_id_tag }} {{ os_network }}"
 
-  - name: 'Create a subnet'
+  - name: 'Create the primary cluster subnet'
     os_subnet:
       name: "{{ os_subnet }}"
       network_name: "{{ os_network }}"
@@ -27,7 +27,7 @@
       allocation_pool_start: "{{ os_subnet_range | next_nth_usable(10) }}"
       allocation_pool_end: "{{ os_subnet_range | ipaddr('last_usable') }}"
 
-  - name: 'Set the cluster subnet tag'
+  - name: 'Set tags on  primary cluster subnet'
     command:
       cmd: "openstack subnet set --tag {{ cluster_id_tag }} {{ os_subnet }}"
 
@@ -106,11 +106,12 @@
       network: "{{ os_external_network }}"
       interfaces:
       - "{{ os_subnet }}"
+    when: os_external_network is defined and os_external_network|length>0
 
   - name: 'Set external router tag'
     command:
       cmd: "openstack router set --tag {{ cluster_id_tag }} {{ os_router }}"
-    when: os_networking_type == "Kuryr"
+    when: os_external_network is defined and os_external_network|length>0
 
   - name: 'Create the API port'
     os_port:
@@ -120,7 +121,7 @@
       - "{{ os_sg_master }}"
       fixed_ips:
       - subnet: "{{ os_subnet }}"
-        ip_address: "{{ os_subnet_range | next_nth_usable(5) }}"
+        ip_address: "{{ os_apiVIP }}"
 
   - name: 'Set API port tag'
     command:
@@ -134,7 +135,7 @@
       - "{{ os_sg_worker }}"
       fixed_ips:
       - subnet: "{{ os_subnet }}"
-        ip_address: "{{ os_subnet_range | next_nth_usable(7) }}"
+        ip_address: "{{ os_ingressVIP }}"
 
   - name: 'Set the Ingress port tag'
     command:
@@ -145,9 +146,11 @@
   - name: 'Attach the API floating IP to API port'
     command:
       cmd: "openstack floating ip set --port {{ os_port_api }} {{ os_api_fip }}"
+    when: os_api_fip is defined and os_api_fip|length>0
 
   # NOTE: openstack ansible module doesn't allow attaching Floating IPs to
   # ports, let's use the CLI instead
   - name: 'Attach the Ingress floating IP to Ingress port'
     command:
       cmd: "openstack floating ip set --port {{ os_port_ingress }} {{ os_ingress_fip }}"
+    when: os_ingress_fip is defined and os_ingress_fip|length>0

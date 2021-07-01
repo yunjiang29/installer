@@ -237,8 +237,8 @@ openshift-vw9j6
 export BASE_DOMAIN='example.com'
 export BASE_DOMAIN_ZONE_NAME='example'
 export NETWORK_CIDR='10.0.0.0/16'
-export MASTER_SUBNET_CIDR='10.0.0.0/19'
-export WORKER_SUBNET_CIDR='10.0.32.0/19'
+export MASTER_SUBNET_CIDR='10.0.0.0/17'
+export WORKER_SUBNET_CIDR='10.0.128.0/17'
 
 export KUBECONFIG=auth/kubeconfig
 export CLUSTER_NAME=$(jq -r .clusterName metadata.json)
@@ -277,8 +277,8 @@ EOF
 ```
 - `infra_id`: the infrastructure name (INFRA_ID above)
 - `region`: the region to deploy the cluster into (for example us-east1)
-- `master_subnet_cidr`: the CIDR for the master subnet (for example 10.0.0.0/19)
-- `worker_subnet_cidr`: the CIDR for the worker subnet (for example 10.0.32.0/19)
+- `master_subnet_cidr`: the CIDR for the master subnet (for example 10.0.0.0/17)
+- `worker_subnet_cidr`: the CIDR for the worker subnet (for example 10.0.128.0/17)
 
 Create the deployment using gcloud.
 
@@ -611,34 +611,6 @@ Create the deployment using gcloud.
 gcloud deployment-manager deployments create ${INFRA_ID}-control-plane --config 05_control_plane.yaml
 ```
 
-## Configure control plane variables
-
-```sh
-export MASTER0_IP=$(gcloud compute instances describe ${INFRA_ID}-m-0 --zone ${ZONE_0} --format json | jq -r .networkInterfaces[0].networkIP)
-export MASTER1_IP=$(gcloud compute instances describe ${INFRA_ID}-m-1 --zone ${ZONE_1} --format json | jq -r .networkInterfaces[0].networkIP)
-export MASTER2_IP=$(gcloud compute instances describe ${INFRA_ID}-m-2 --zone ${ZONE_2} --format json | jq -r .networkInterfaces[0].networkIP)
-```
-
-## Add DNS entries for control plane etcd
-The templates do not manage DNS entries due to limitations of Deployment Manager, so we must add the etcd entries manually.
-
-If you are installing into a [Shared VPC (XPN)][sharedvpc],
-use the `--account` and `--project` parameters to perform these actions in the host project.
-
-```sh
-if [ -f transaction.yaml ]; then rm transaction.yaml; fi
-gcloud dns record-sets transaction start --zone ${INFRA_ID}-private-zone
-gcloud dns record-sets transaction add ${MASTER0_IP} --name etcd-0.${CLUSTER_NAME}.${BASE_DOMAIN}. --ttl 60 --type A --zone ${INFRA_ID}-private-zone
-gcloud dns record-sets transaction add ${MASTER1_IP} --name etcd-1.${CLUSTER_NAME}.${BASE_DOMAIN}. --ttl 60 --type A --zone ${INFRA_ID}-private-zone
-gcloud dns record-sets transaction add ${MASTER2_IP} --name etcd-2.${CLUSTER_NAME}.${BASE_DOMAIN}. --ttl 60 --type A --zone ${INFRA_ID}-private-zone
-gcloud dns record-sets transaction add \
-  "0 10 2380 etcd-0.${CLUSTER_NAME}.${BASE_DOMAIN}." \
-  "0 10 2380 etcd-1.${CLUSTER_NAME}.${BASE_DOMAIN}." \
-  "0 10 2380 etcd-2.${CLUSTER_NAME}.${BASE_DOMAIN}." \
-  --name _etcd-server-ssl._tcp.${CLUSTER_NAME}.${BASE_DOMAIN}. --ttl 60 --type SRV --zone ${INFRA_ID}-private-zone
-gcloud dns record-sets transaction execute --zone ${INFRA_ID}-private-zone
-```
-
 ## Add control plane instances to load balancers
 The templates do not manage load balancer membership due to limitations of Deployment
 Manager, so we must add the control plane nodes manually.
@@ -646,18 +618,18 @@ Manager, so we must add the control plane nodes manually.
 ### Add control plane instances to internal load balancer instance groups
 
 ```sh
-gcloud compute instance-groups unmanaged add-instances ${INFRA_ID}-master-${ZONE_0}-instance-group --zone=${ZONE_0} --instances=${INFRA_ID}-m-0
-gcloud compute instance-groups unmanaged add-instances ${INFRA_ID}-master-${ZONE_1}-instance-group --zone=${ZONE_1} --instances=${INFRA_ID}-m-1
-gcloud compute instance-groups unmanaged add-instances ${INFRA_ID}-master-${ZONE_2}-instance-group --zone=${ZONE_2} --instances=${INFRA_ID}-m-2
+gcloud compute instance-groups unmanaged add-instances ${INFRA_ID}-master-${ZONE_0}-instance-group --zone=${ZONE_0} --instances=${INFRA_ID}-master-0
+gcloud compute instance-groups unmanaged add-instances ${INFRA_ID}-master-${ZONE_1}-instance-group --zone=${ZONE_1} --instances=${INFRA_ID}-master-1
+gcloud compute instance-groups unmanaged add-instances ${INFRA_ID}-master-${ZONE_2}-instance-group --zone=${ZONE_2} --instances=${INFRA_ID}-master-2
 ```
 
 ### Add control plane instances to external load balancer target pools (optional)
 If you deployed external load balancers with `02_infra.yaml`, add the control plane instances to the target pool.
 
 ```sh
-gcloud compute target-pools add-instances ${INFRA_ID}-api-target-pool --instances-zone="${ZONE_0}" --instances=${INFRA_ID}-m-0
-gcloud compute target-pools add-instances ${INFRA_ID}-api-target-pool --instances-zone="${ZONE_1}" --instances=${INFRA_ID}-m-1
-gcloud compute target-pools add-instances ${INFRA_ID}-api-target-pool --instances-zone="${ZONE_2}" --instances=${INFRA_ID}-m-2
+gcloud compute target-pools add-instances ${INFRA_ID}-api-target-pool --instances-zone="${ZONE_0}" --instances=${INFRA_ID}-master-0
+gcloud compute target-pools add-instances ${INFRA_ID}-api-target-pool --instances-zone="${ZONE_1}" --instances=${INFRA_ID}-master-1
+gcloud compute target-pools add-instances ${INFRA_ID}-api-target-pool --instances-zone="${ZONE_2}" --instances=${INFRA_ID}-master-2
 ```
 
 ## Launch additional compute nodes
@@ -677,7 +649,7 @@ $ cat <<EOF >06_worker.yaml
 imports:
 - path: 06_worker.py
 resources:
-- name: 'w-0'
+- name: 'worker-0'
   type: 06_worker.py
   properties:
     infra_id: '${INFRA_ID}'
@@ -688,7 +660,7 @@ resources:
     root_volume_size: '128'
     service_account_email: '${WORKER_SERVICE_ACCOUNT}'
     ignition: '${WORKER_IGNITION}'
-- name: 'w-1'
+- name: 'worker-1'
   type: 06_worker.py
   properties:
     infra_id: '${INFRA_ID}'
@@ -701,9 +673,8 @@ resources:
     ignition: '${WORKER_IGNITION}'
 EOF
 ```
-- `name`: the name of the compute node (for example w-a-0)
+- `name`: the name of the compute node (for example worker-0)
 - `infra_id`: the infrastructure name (INFRA_ID above)
-- `region`: the region to deploy the cluster into (for example us-east1)
 - `zone`: the zone to deploy the worker node into (for example us-east1-b)
 - `compute_subnet`: the URI to the compute subnet
 - `image`: the URI to the RHCOS image

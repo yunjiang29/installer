@@ -1,17 +1,19 @@
 package installconfig
 
 import (
+	survey "github.com/AlecAivazis/survey/v2"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/pkg/errors"
-	survey "gopkg.in/AlecAivazis/survey.v1"
 
 	"github.com/openshift/installer/pkg/asset"
 	awsconfig "github.com/openshift/installer/pkg/asset/installconfig/aws"
 	azureconfig "github.com/openshift/installer/pkg/asset/installconfig/azure"
 	gcpconfig "github.com/openshift/installer/pkg/asset/installconfig/gcp"
+	ibmcloudconfig "github.com/openshift/installer/pkg/asset/installconfig/ibmcloud"
 	"github.com/openshift/installer/pkg/types/aws"
 	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
 	"github.com/openshift/installer/pkg/validate"
 )
 
@@ -33,17 +35,21 @@ func (a *baseDomain) Generate(parents asset.Parents) error {
 	platform := &platform{}
 	parents.Get(platform)
 
+	var err error
 	switch platform.CurrentName() {
 	case aws.Name:
-		var err error
 		a.BaseDomain, err = awsconfig.GetBaseDomain()
 		cause := errors.Cause(err)
 		if !(awsconfig.IsForbidden(cause) || request.IsErrorThrottle(cause)) {
 			return err
 		}
 	case azure.Name:
-		var err error
-		azureDNS, _ := azureconfig.NewDNSConfig()
+		// Create client using public cloud because install config has not been generated yet.
+		ssn, err := azureconfig.GetSession(azure.PublicCloud, "")
+		if err != nil {
+			return err
+		}
+		azureDNS := azureconfig.NewDNSConfig(ssn)
 		zone, err := azureDNS.GetDNSZone()
 		if err != nil {
 			return err
@@ -51,18 +57,24 @@ func (a *baseDomain) Generate(parents asset.Parents) error {
 		a.BaseDomain = zone.Name
 		return platform.Azure.SetBaseDomain(zone.ID)
 	case gcp.Name:
-		var err error
 		a.BaseDomain, err = gcpconfig.GetBaseDomain(platform.GCP.ProjectID)
 
 		// We are done if success (err == nil) or an err besides forbidden/throttling
 		if !(gcpconfig.IsForbidden(err) || gcpconfig.IsThrottled(err)) {
 			return err
 		}
+	case ibmcloud.Name:
+		zone, err := ibmcloudconfig.GetDNSZone()
+		if err != nil {
+			return err
+		}
+		a.BaseDomain = zone.Name
+		return nil
 	default:
 		//Do nothing
 	}
 
-	return survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Input{
 				Message: "Base Domain",
@@ -72,7 +84,10 @@ func (a *baseDomain) Generate(parents asset.Parents) error {
 				return validate.DomainName(ans.(string), true)
 			}),
 		},
-	}, &a.BaseDomain)
+	}, &a.BaseDomain); err != nil {
+		return errors.Wrap(err, "failed UserInput")
+	}
+	return nil
 }
 
 // Name returns the human-friendly name of the asset.

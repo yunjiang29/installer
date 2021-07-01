@@ -3,14 +3,19 @@ package validation
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	dockerref "github.com/containers/image/docker/reference"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
+	operv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/installer/pkg/ipnet"
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/aws"
@@ -21,6 +26,10 @@ import (
 	baremetalvalidation "github.com/openshift/installer/pkg/types/baremetal/validation"
 	"github.com/openshift/installer/pkg/types/gcp"
 	gcpvalidation "github.com/openshift/installer/pkg/types/gcp/validation"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
+	ibmcloudvalidation "github.com/openshift/installer/pkg/types/ibmcloud/validation"
+	"github.com/openshift/installer/pkg/types/kubevirt"
+	kubevirtvalidation "github.com/openshift/installer/pkg/types/kubevirt/validation"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	libvirtvalidation "github.com/openshift/installer/pkg/types/libvirt/validation"
 	"github.com/openshift/installer/pkg/types/openstack"
@@ -36,8 +45,11 @@ const (
 	masterPoolName = "master"
 )
 
+// list of known plugins that require hostPrefix to be set
+var pluginsUsingHostPrefix = sets.NewString(string(operv1.NetworkTypeOpenShiftSDN), string(operv1.NetworkTypeOVNKubernetes))
+
 // ValidateInstallConfig checks that the specified install config is valid.
-func ValidateInstallConfig(c *types.InstallConfig, openStackValidValuesFetcher openstackvalidation.ValidValuesFetcher) field.ErrorList {
+func ValidateInstallConfig(c *types.InstallConfig) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if c.TypeMeta.APIVersion == "" {
 		return field.ErrorList{field.Required(field.NewPath("apiVersion"), "install-config version required")}
@@ -62,6 +74,10 @@ func ValidateInstallConfig(c *types.InstallConfig, openStackValidValuesFetcher o
 	if c.Platform.GCP != nil || c.Platform.Azure != nil {
 		nameErr = validate.ClusterName1035(c.ObjectMeta.Name)
 	}
+	if c.Platform.Ovirt != nil {
+		// FIX-ME: As soon bz#1915122 get resolved remove the limitation of 14 chars for the clustername
+		nameErr = validate.ClusterNameMaxLength(c.ObjectMeta.Name, 14)
+	}
 	if nameErr != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("metadata", "name"), c.ObjectMeta.Name, nameErr.Error()))
 	}
@@ -78,10 +94,11 @@ func ValidateInstallConfig(c *types.InstallConfig, openStackValidValuesFetcher o
 	if c.Networking != nil {
 		allErrs = append(allErrs, validateNetworking(c.Networking, field.NewPath("networking"))...)
 		allErrs = append(allErrs, validateNetworkingIPVersion(c.Networking, &c.Platform)...)
+		allErrs = append(allErrs, validateNetworkingForPlatform(c.Networking, &c.Platform, field.NewPath("networking"))...)
 	} else {
 		allErrs = append(allErrs, field.Required(field.NewPath("networking"), "networking is required"))
 	}
-	allErrs = append(allErrs, validatePlatform(&c.Platform, field.NewPath("platform"), openStackValidValuesFetcher, c.Networking, c)...)
+	allErrs = append(allErrs, validatePlatform(&c.Platform, field.NewPath("platform"), c.Networking, c)...)
 	if c.ControlPlane != nil {
 		allErrs = append(allErrs, validateControlPlane(&c.Platform, c.ControlPlane, field.NewPath("controlPlane"))...)
 	} else {
@@ -92,11 +109,20 @@ func ValidateInstallConfig(c *types.InstallConfig, openStackValidValuesFetcher o
 		allErrs = append(allErrs, field.Invalid(field.NewPath("pullSecret"), c.PullSecret, err.Error()))
 	}
 	if c.Proxy != nil {
-		allErrs = append(allErrs, validateProxy(c.Proxy, field.NewPath("proxy"))...)
+		allErrs = append(allErrs, validateProxy(c.Proxy, c, field.NewPath("proxy"))...)
 	}
 	allErrs = append(allErrs, validateImageContentSources(c.ImageContentSources, field.NewPath("imageContentSources"))...)
 	if _, ok := validPublishingStrategies[c.Publish]; !ok {
 		allErrs = append(allErrs, field.NotSupported(field.NewPath("publish"), c.Publish, validPublishingStrategyValues))
+	}
+	allErrs = append(allErrs, validateCloudCredentialsMode(c.CredentialsMode, field.NewPath("credentialsMode"), c.Platform.Name())...)
+
+	if c.Publish == types.InternalPublishingStrategy {
+		switch platformName := c.Platform.Name(); platformName {
+		case aws.Name, azure.Name, gcp.Name:
+		default:
+			allErrs = append(allErrs, field.Invalid(field.NewPath("publish"), c.Publish, fmt.Sprintf("Internal publish strategy is not supported on %q platform", platformName)))
+		}
 	}
 
 	return allErrs
@@ -172,7 +198,7 @@ func validateNetworkingIPVersion(n *types.Networking, p *types.Platform) field.E
 
 	switch {
 	case hasIPv4 && hasIPv6:
-		if n.NetworkType == "OpenShiftSDN" {
+		if n.NetworkType == string(operv1.NetworkTypeOpenShiftSDN) {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("networking", "networkType"), n.NetworkType, "dual-stack IPv4/IPv6 is not supported for this networking plugin"))
 		}
 
@@ -180,8 +206,10 @@ func validateNetworkingIPVersion(n *types.Networking, p *types.Platform) field.E
 			allErrs = append(allErrs, field.Invalid(field.NewPath("networking", "serviceNetwork"), strings.Join(ipnetworksToStrings(n.ServiceNetwork), ", "), "when installing dual-stack IPv4/IPv6 you must provide two service networks, one for each IP address type"))
 		}
 
+		experimentalDualStackEnabled, _ := strconv.ParseBool(os.Getenv("OPENSHIFT_INSTALL_EXPERIMENTAL_DUAL_STACK"))
 		switch {
-		case p.Azure != nil:
+		case p.Azure != nil && experimentalDualStackEnabled:
+			logrus.Warnf("Using experimental Azure dual-stack support")
 		case p.BareMetal != nil:
 		case p.None != nil:
 		default:
@@ -199,14 +227,15 @@ func validateNetworkingIPVersion(n *types.Networking, p *types.Platform) field.E
 		}
 
 	case hasIPv6:
-		if n.NetworkType == "OpenShiftSDN" {
+		if n.NetworkType == string(operv1.NetworkTypeOpenShiftSDN) {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("networking", "networkType"), n.NetworkType, "IPv6 is not supported for this networking plugin"))
 		}
 
 		switch {
 		case p.BareMetal != nil:
 		case p.None != nil:
-		case p.Azure != nil && os.Getenv("OPENSHIFT_INSTALL_AZURE_EMULATE_SINGLESTACK_IPV6") == "true":
+		case p.Azure != nil && p.Azure.CloudName == azure.StackCloud:
+			allErrs = append(allErrs, field.Invalid(field.NewPath("networking"), "IPv6", "Azure Stack does not support IPv6"))
 		default:
 			allErrs = append(allErrs, field.Invalid(field.NewPath("networking"), "IPv6", "single-stack IPv6 is not supported for this platform"))
 		}
@@ -272,6 +301,47 @@ func validateNetworking(n *types.Networking, fldPath *field.Path) field.ErrorLis
 	return allErrs
 }
 
+func validateNetworkingForPlatform(n *types.Networking, platform *types.Platform, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	switch {
+	case platform.Libvirt != nil:
+		errMsg := "overlaps with default Docker Bridge subnet"
+		for idx, mn := range n.MachineNetwork {
+			if validate.DoCIDRsOverlap(&mn.CIDR.IPNet, validate.DockerBridgeCIDR) {
+				allErrs = append(allErrs, field.Invalid(fldPath.Child("machineNewtork").Index(idx), mn.CIDR.String(), errMsg))
+			}
+		}
+		for idx, sn := range n.ServiceNetwork {
+			if validate.DoCIDRsOverlap(&sn.IPNet, validate.DockerBridgeCIDR) {
+				allErrs = append(allErrs, field.Invalid(fldPath.Child("serviceNetwork").Index(idx), sn.String(), errMsg))
+			}
+		}
+		for idx, cn := range n.ClusterNetwork {
+			if validate.DoCIDRsOverlap(&cn.CIDR.IPNet, validate.DockerBridgeCIDR) {
+				allErrs = append(allErrs, field.Invalid(fldPath.Child("clusterNetwork").Index(idx), cn.CIDR.String(), errMsg))
+			}
+		}
+	default:
+		warningMsgFmt := "%s: %s overlaps with default Docker Bridge subnet"
+		for idx, mn := range n.MachineNetwork {
+			if validate.DoCIDRsOverlap(&mn.CIDR.IPNet, validate.DockerBridgeCIDR) {
+				logrus.Warnf(warningMsgFmt, fldPath.Child("machineNetwork").Index(idx), mn.CIDR.String())
+			}
+		}
+		for idx, sn := range n.ServiceNetwork {
+			if validate.DoCIDRsOverlap(&sn.IPNet, validate.DockerBridgeCIDR) {
+				logrus.Warnf(warningMsgFmt, fldPath.Child("serviceNetwork").Index(idx), sn.String())
+			}
+		}
+		for idx, cn := range n.ClusterNetwork {
+			if validate.DoCIDRsOverlap(&cn.CIDR.IPNet, validate.DockerBridgeCIDR) {
+				logrus.Warnf(warningMsgFmt, fldPath.Child("clusterNetwork").Index(idx), cn.CIDR.String())
+			}
+		}
+	}
+	return allErrs
+}
+
 func validateClusterNetwork(n *types.Networking, cn *types.ClusterNetworkEntry, idx int, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if err := validate.SubnetCIDR(&cn.CIDR.IPNet); err != nil {
@@ -295,8 +365,13 @@ func validateClusterNetwork(n *types.Networking, cn *types.ClusterNetworkEntry, 
 	if cn.HostPrefix < 0 {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("hostPrefix"), cn.HostPrefix, "hostPrefix must be positive"))
 	}
-	if ones, _ := cn.CIDR.Mask.Size(); cn.HostPrefix < int32(ones) {
-		allErrs = append(allErrs, field.Invalid(fldPath.Child("hostPrefix"), cn.HostPrefix, "cluster network host subnetwork prefix must not be larger size than CIDR "+cn.CIDR.String()))
+	// ignore hostPrefix if the plugin does not use it and has it unset
+	if pluginsUsingHostPrefix.Has(n.NetworkType) || (cn.HostPrefix != 0) {
+		if ones, bits := cn.CIDR.Mask.Size(); cn.HostPrefix < int32(ones) {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("hostPrefix"), cn.HostPrefix, "cluster network host subnetwork prefix must not be larger size than CIDR "+cn.CIDR.String()))
+		} else if bits == 128 && cn.HostPrefix != 64 {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("hostPrefix"), cn.HostPrefix, "cluster network host subnetwork prefix must be 64 for IPv6 networks"))
+		}
 	}
 	return allErrs
 }
@@ -333,7 +408,7 @@ func validateCompute(platform *types.Platform, control *types.MachinePool, pools
 	return allErrs
 }
 
-func validatePlatform(platform *types.Platform, fldPath *field.Path, openStackValidValuesFetcher openstackvalidation.ValidValuesFetcher, network *types.Networking, c *types.InstallConfig) field.ErrorList {
+func validatePlatform(platform *types.Platform, fldPath *field.Path, network *types.Networking, c *types.InstallConfig) field.ErrorList {
 	allErrs := field.ErrorList{}
 	activePlatform := platform.Name()
 	platforms := make([]string, len(types.PlatformNames))
@@ -361,12 +436,15 @@ func validatePlatform(platform *types.Platform, fldPath *field.Path, openStackVa
 	if platform.GCP != nil {
 		validate(gcp.Name, platform.GCP, func(f *field.Path) field.ErrorList { return gcpvalidation.ValidatePlatform(platform.GCP, f) })
 	}
+	if platform.IBMCloud != nil {
+		validate(ibmcloud.Name, platform.IBMCloud, func(f *field.Path) field.ErrorList { return ibmcloudvalidation.ValidatePlatform(platform.IBMCloud, f) })
+	}
 	if platform.Libvirt != nil {
 		validate(libvirt.Name, platform.Libvirt, func(f *field.Path) field.ErrorList { return libvirtvalidation.ValidatePlatform(platform.Libvirt, f) })
 	}
 	if platform.OpenStack != nil {
 		validate(openstack.Name, platform.OpenStack, func(f *field.Path) field.ErrorList {
-			return openstackvalidation.ValidatePlatform(platform.OpenStack, network, f, openStackValidValuesFetcher, c)
+			return openstackvalidation.ValidatePlatform(platform.OpenStack, network, f, c)
 		})
 	}
 	if platform.VSphere != nil {
@@ -382,32 +460,43 @@ func validatePlatform(platform *types.Platform, fldPath *field.Path, openStackVa
 			return ovirtvalidation.ValidatePlatform(platform.Ovirt, f)
 		})
 	}
+	if platform.Kubevirt != nil {
+		validate(kubevirt.Name, platform.Kubevirt, func(f *field.Path) field.ErrorList {
+			return kubevirtvalidation.ValidatePlatform(platform.Kubevirt, f, c)
+		})
+	}
 	return allErrs
 }
 
-func validateProxy(p *types.Proxy, fldPath *field.Path) field.ErrorList {
+func validateProxy(p *types.Proxy, c *types.InstallConfig, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if p.HTTPProxy == "" && p.HTTPSProxy == "" {
 		allErrs = append(allErrs, field.Required(fldPath, "must include httpProxy or httpsProxy"))
 	}
 	if p.HTTPProxy != "" {
-		if err := validate.URI(p.HTTPProxy); err != nil {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("HTTPProxy"), p.HTTPProxy, err.Error()))
+		allErrs = append(allErrs, validateURI(p.HTTPProxy, fldPath.Child("httpProxy"), []string{"http"})...)
+		if c.Networking != nil {
+			allErrs = append(allErrs, validateIPProxy(p.HTTPProxy, c.Networking, fldPath.Child("httpProxy"))...)
 		}
 	}
 	if p.HTTPSProxy != "" {
-		if err := validate.URI(p.HTTPSProxy); err != nil {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("HTTPSProxy"), p.HTTPSProxy, err.Error()))
+		allErrs = append(allErrs, validateURI(p.HTTPSProxy, fldPath.Child("httpsProxy"), []string{"http", "https"})...)
+		if c.Networking != nil {
+			allErrs = append(allErrs, validateIPProxy(p.HTTPSProxy, c.Networking, fldPath.Child("httpsProxy"))...)
 		}
 	}
-	if p.NoProxy != "" {
-		for _, v := range strings.Split(p.NoProxy, ",") {
+	if p.NoProxy != "" && p.NoProxy != "*" {
+		if strings.Contains(p.NoProxy, " ") {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("noProxy"), p.NoProxy, fmt.Sprintf("noProxy must not have spaces")))
+		}
+		for idx, v := range strings.Split(p.NoProxy, ",") {
 			v = strings.TrimSpace(v)
 			errDomain := validate.NoProxyDomainName(v)
 			_, _, errCIDR := net.ParseCIDR(v)
 			if errDomain != nil && errCIDR != nil {
-				allErrs = append(allErrs, field.Invalid(field.NewPath("NoProxy"), v, "must be a CIDR or domain, without wildcard characters"))
+				allErrs = append(allErrs, field.Invalid(fldPath.Child("noProxy"), p.NoProxy, fmt.Sprintf(
+					"each element of noProxy must be a CIDR or domain without wildcard characters, which is violated by element %d %q", idx, v)))
 			}
 		}
 	}
@@ -459,3 +548,76 @@ var (
 		return v
 	}()
 )
+
+func validateCloudCredentialsMode(mode types.CredentialsMode, fldPath *field.Path, platform string) field.ErrorList {
+	if mode == "" {
+		return nil
+	}
+	allErrs := field.ErrorList{}
+	// validPlatformCredentialsModes is a map from the platform name to a slice of credentials modes that are valid
+	// for the platform. If a platform name is not in the map, then the credentials mode cannot be set for that platform.
+	validPlatformCredentialsModes := map[string][]types.CredentialsMode{
+		aws.Name:   {types.MintCredentialsMode, types.PassthroughCredentialsMode, types.ManualCredentialsMode},
+		azure.Name: {types.MintCredentialsMode, types.PassthroughCredentialsMode, types.ManualCredentialsMode},
+		gcp.Name:   {types.MintCredentialsMode, types.PassthroughCredentialsMode, types.ManualCredentialsMode},
+	}
+	if validModes, ok := validPlatformCredentialsModes[platform]; ok {
+		validModesSet := sets.NewString()
+		for _, m := range validModes {
+			validModesSet.Insert(string(m))
+		}
+		if !validModesSet.Has(string(mode)) {
+			allErrs = append(allErrs, field.NotSupported(fldPath, mode, validModesSet.List()))
+		}
+	} else {
+		allErrs = append(allErrs, field.Invalid(fldPath, mode, fmt.Sprintf("cannot be set when using the %q platform", platform)))
+	}
+	return allErrs
+}
+
+// validateURI checks if the given url is of the right format. It also checks if the scheme of the uri
+// provided is within the list of accepted schema provided as part of the input.
+func validateURI(uri string, fldPath *field.Path, schemes []string) field.ErrorList {
+	parsed, err := url.ParseRequestURI(uri)
+	if err != nil {
+		return field.ErrorList{field.Invalid(fldPath, uri, err.Error())}
+	}
+	for _, scheme := range schemes {
+		if scheme == parsed.Scheme {
+			return nil
+		}
+	}
+	return field.ErrorList{field.NotSupported(fldPath, parsed.Scheme, schemes)}
+}
+
+// validateIPProxy checks if the given proxy string is an IP and if so checks the service and
+// cluster networks and returns error if the IP belongs in them. Returns nil if the proxy is
+// not an IP address.
+func validateIPProxy(proxy string, n *types.Networking, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	parsed, err := url.ParseRequestURI(proxy)
+	if err != nil {
+		return allErrs
+	}
+
+	proxyIP := net.ParseIP(parsed.Hostname())
+	if proxyIP == nil {
+		return nil
+	}
+
+	for _, network := range n.ClusterNetwork {
+		if network.CIDR.Contains(proxyIP) {
+			allErrs = append(allErrs, field.Invalid(fldPath, proxy, "proxy value is part of the cluster networks"))
+			break
+		}
+	}
+
+	for _, network := range n.ServiceNetwork {
+		if network.Contains(proxyIP) {
+			allErrs = append(allErrs, field.Invalid(fldPath, proxy, "proxy value is part of the service networks"))
+			break
+		}
+	}
+	return allErrs
+}

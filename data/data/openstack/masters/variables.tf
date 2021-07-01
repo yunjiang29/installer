@@ -41,12 +41,22 @@ variable "root_volume_type" {
   description = "The type of volume for the root block device."
 }
 
-variable "server_group_id" {
+variable "server_group_name" {
   type        = string
-  description = "ID of the server group to assign the servers to."
+  description = "Name of the server group for the master nodes."
 }
 
 variable "additional_network_ids" {
   type        = list(string)
   description = "IDs of additional networks for master nodes."
+}
+
+variable "zones" {
+  type        = list(string)
+  description = "Availability Zones to schedule masters on."
+}
+
+variable "root_volume_zones" {
+  type        = list(string)
+  description = "Availability Zones to schedule root volumes on."
 }

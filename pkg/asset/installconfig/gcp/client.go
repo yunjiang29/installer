@@ -11,6 +11,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	dns "google.golang.org/api/dns/v1"
 	"google.golang.org/api/option"
+	"google.golang.org/api/serviceusage/v1"
 )
 
 //go:generate mockgen -source=./client.go -destination=./mock/gcpclient_generated.go -package=mock
@@ -18,11 +19,14 @@ import (
 // API represents the calls made to the API.
 type API interface {
 	GetNetwork(ctx context.Context, network, project string) (*compute.Network, error)
+	GetMachineType(ctx context.Context, project, zone, machineType string) (*compute.MachineType, error)
 	GetPublicDomains(ctx context.Context, project string) ([]string, error)
 	GetPublicDNSZone(ctx context.Context, project, baseDomain string) (*dns.ManagedZone, error)
 	GetSubnetworks(ctx context.Context, network, project, region string) ([]*compute.Subnetwork, error)
 	GetProjects(ctx context.Context) (map[string]string, error)
 	GetRecordSets(ctx context.Context, project, zone string) ([]*dns.ResourceRecordSet, error)
+	GetZones(ctx context.Context, project, filter string) ([]*compute.Zone, error)
+	GetEnabledServices(ctx context.Context, project string) ([]string, error)
 }
 
 // Client makes calls to the GCP API.
@@ -44,6 +48,24 @@ func NewClient(ctx context.Context) (*Client, error) {
 		ssn: ssn,
 	}
 	return client, nil
+}
+
+// GetMachineType uses the GCP Compute Service API to get the specified machine type.
+func (c *Client) GetMachineType(ctx context.Context, project, zone, machineType string) (*compute.MachineType, error) {
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+
+	svc, err := c.getComputeService(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := svc.MachineTypes.Get(project, zone, machineType).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // GetNetwork uses the GCP Compute Service API to get a network by name from a project.
@@ -152,9 +174,7 @@ func (c *Client) GetSubnetworks(ctx context.Context, network, project, region st
 	req := svc.Subnetworks.List(project, region).Filter(filter)
 	var res []*compute.Subnetwork
 	if err := req.Pages(ctx, func(page *compute.SubnetworkList) error {
-		for _, subnet := range page.Items {
-			res = append(res, subnet)
-		}
+		res = append(res, page.Items...)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -202,10 +222,74 @@ func (c *Client) GetProjects(ctx context.Context) (map[string]string, error) {
 	return projects, nil
 }
 
+// GetZones uses the GCP Compute Service API to get a list of zones from a project.
+func (c *Client) GetZones(ctx context.Context, project, filter string) ([]*compute.Zone, error) {
+	zones := []*compute.Zone{}
+
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+
+	svc, err := c.getComputeService(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req := svc.Zones.List(project)
+	if filter != "" {
+		req = req.Filter(filter)
+	}
+
+	if err := req.Pages(ctx, func(page *compute.ZoneList) error {
+		for _, zone := range page.Items {
+			zones = append(zones, zone)
+		}
+		return nil
+	}); err != nil {
+		return nil, errors.Wrapf(err, "failed to get zones from project %s", project)
+	}
+
+	return zones, nil
+}
+
 func (c *Client) getCloudResourceService(ctx context.Context) (*cloudresourcemanager.Service, error) {
 	svc, err := cloudresourcemanager.NewService(ctx, option.WithCredentials(c.ssn.Credentials))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create cloud resource service")
+	}
+	return svc, nil
+}
+
+// GetEnabledServices gets the list of enabled services for a project.
+func (c *Client) GetEnabledServices(ctx context.Context, project string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+
+	svc, err := c.getServiceUsageService(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// List accepts a parent, which includes the type of resource with the id.
+	parent := fmt.Sprintf("projects/%s", project)
+	req := svc.Services.List(parent).Filter("state:ENABLED")
+	var services []string
+	if err := req.Pages(ctx, func(page *serviceusage.ListServicesResponse) error {
+		for _, service := range page.Services {
+			//services are listed in the form of project/services/serviceName
+			index := strings.LastIndex(service.Name, "/")
+			services = append(services, service.Name[index+1:])
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return services, nil
+}
+
+func (c *Client) getServiceUsageService(ctx context.Context) (*serviceusage.Service, error) {
+	svc, err := serviceusage.NewService(ctx, option.WithCredentials(c.ssn.Credentials))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create service usage service")
 	}
 	return svc, nil
 }

@@ -1,6 +1,7 @@
 package bmc
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
@@ -14,10 +15,17 @@ type AccessDetailsFactory func(parsedURL *url.URL, disableCertificateVerificatio
 
 var factories = map[string]AccessDetailsFactory{}
 
-// We could make this function public if we want to support
-// out-of-tree factories.
-func registerFactory(name string, factory AccessDetailsFactory) {
+// RegisterFactory maps a BMC type name to an AccessDetailsFactory,
+// with optional scheme extensions.
+//
+// RegisterFactory("bmcname", theFunc, []string{"http", "https"})
+// maps "bmcname", "bmcname+http", and "bmcname+https" to theFunc
+func RegisterFactory(name string, factory AccessDetailsFactory, schemes []string) {
 	factories[name] = factory
+
+	for _, scheme := range schemes {
+		factories[fmt.Sprintf("%s+%s", name, scheme)] = factory
+	}
 }
 
 // AccessDetails contains the information about how to get to a BMC.
@@ -51,6 +59,9 @@ type AccessDetails interface {
 	PowerInterface() string
 	RAIDInterface() string
 	VendorInterface() string
+
+	// Whether the driver supports changing secure boot state.
+	SupportsSecureBoot() bool
 }
 
 func getParsedURL(address string) (parsedURL *url.URL, err error) {
@@ -100,6 +111,10 @@ func getParsedURL(address string) (parsedURL *url.URL, err error) {
 // NewAccessDetails creates an AccessDetails structure from the URL
 // for a BMC.
 func NewAccessDetails(address string, disableCertificateVerification bool) (AccessDetails, error) {
+
+	if address == "" {
+		return nil, errors.New("missing BMC address")
+	}
 
 	parsedURL, err := getParsedURL(address)
 	if err != nil {

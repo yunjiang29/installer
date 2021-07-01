@@ -6,18 +6,29 @@ import (
 	"os"
 	"strings"
 
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
+
 	"github.com/hashicorp/go-azure-helpers/authentication"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/validate"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/resourceproviders"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/sdk"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
 
 func AzureProvider() terraform.ResourceProvider {
+	return azureProvider(false)
+}
+
+func TestAzureProvider() terraform.ResourceProvider {
+	return azureProvider(true)
+}
+
+func azureProvider(supportLegacyTestSuite bool) terraform.ResourceProvider {
 	// avoids this showing up in test output
-	var debugLog = func(f string, v ...interface{}) {
+	debugLog := func(f string, v ...interface{}) {
 		if os.Getenv("TF_LOG") == "" {
 			return
 		}
@@ -31,7 +42,43 @@ func AzureProvider() terraform.ResourceProvider {
 
 	dataSources := make(map[string]*schema.Resource)
 	resources := make(map[string]*schema.Resource)
-	for _, service := range SupportedServices() {
+
+	// first handle the typed services
+	for _, service := range SupportedTypedServices() {
+		debugLog("[DEBUG] Registering Data Sources for %q..", service.Name())
+		for _, ds := range service.DataSources() {
+			key := ds.ResourceType()
+			if existing := dataSources[key]; existing != nil {
+				panic(fmt.Sprintf("An existing Data Source exists for %q", key))
+			}
+
+			wrapper := sdk.NewDataSourceWrapper(ds)
+			dataSource, err := wrapper.DataSource()
+			if err != nil {
+				panic(fmt.Errorf("creating Wrapper for Data Source %q: %+v", key, err))
+			}
+
+			dataSources[key] = dataSource
+		}
+
+		debugLog("[DEBUG] Registering Resources for %q..", service.Name())
+		for _, r := range service.Resources() {
+			key := r.ResourceType()
+			if existing := resources[key]; existing != nil {
+				panic(fmt.Sprintf("An existing Resource exists for %q", key))
+			}
+
+			wrapper := sdk.NewResourceWrapper(r)
+			resource, err := wrapper.Resource()
+			if err != nil {
+				panic(fmt.Errorf("creating Wrapper for Resource %q: %+v", key, err))
+			}
+			resources[key] = resource
+		}
+	}
+
+	// then handle the untyped services
+	for _, service := range SupportedUntypedServices() {
 		debugLog("[DEBUG] Registering Data Sources for %q..", service.Name())
 		for k, v := range service.SupportedDataSources() {
 			if existing := dataSources[k]; existing != nil {
@@ -48,14 +95,6 @@ func AzureProvider() terraform.ResourceProvider {
 			}
 
 			resources[k] = v
-		}
-	}
-
-	// TODO: remove all of this in 2.0 once Custom Timeouts are supported
-	if !features.SupportsCustomTimeouts() {
-		// ensure any timeouts configured on the resources are removed until 2.0
-		for _, v := range resources {
-			v.Timeouts = nil
 		}
 	}
 
@@ -96,6 +135,21 @@ func AzureProvider() terraform.ResourceProvider {
 				Required:    true,
 				DefaultFunc: schema.EnvDefaultFunc("ARM_ENVIRONMENT", "public"),
 				Description: "The Cloud Environment which should be used. Possible values are public, usgovernment, german, and china. Defaults to public.",
+			},
+
+			"metadata_host": {
+				Type:        schema.TypeString,
+				Required:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_METADATA_HOSTNAME", ""),
+				Description: "The Hostname which should be used for the Azure Metadata Service.",
+			},
+
+			"metadata_url": {
+				Type:     schema.TypeString,
+				Optional: true,
+				// TODO: remove in 3.0
+				Deprecated:  "use `metadata_host` instead",
+				Description: "Deprecated - replaced by `metadata_host`.",
 			},
 
 			// Client Certificate specific fields
@@ -139,16 +193,15 @@ func AzureProvider() terraform.ResourceProvider {
 			"partner_id": {
 				Type:         schema.TypeString,
 				Optional:     true,
-				ValidateFunc: validate.UUIDOrEmpty,
+				ValidateFunc: validation.Any(validation.IsUUID, validation.StringIsEmpty),
 				DefaultFunc:  schema.EnvDefaultFunc("ARM_PARTNER_ID", ""),
 				Description:  "A GUID/UUID that is registered with Microsoft to facilitate partner resource usage attribution.",
 			},
 
 			"disable_correlation_request_id": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				// TODO: add an ARM_ prefix in 2.0w
-				DefaultFunc: schema.EnvDefaultFunc("DISABLE_CORRELATION_REQUEST_ID", false),
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_DISABLE_CORRELATION_REQUEST_ID", false),
 				Description: "This will disable the x-ms-correlation-request-id header.",
 			},
 
@@ -159,24 +212,36 @@ func AzureProvider() terraform.ResourceProvider {
 				Description: "This will disable the Terraform Partner ID which is used if a custom `partner_id` isn't specified.",
 			},
 
-			// Advanced feature flags
-			"skip_credentials_validation": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("ARM_SKIP_CREDENTIALS_VALIDATION", false),
-				Description: "This will cause the AzureRM Provider to skip verifying the credentials being used are valid.",
-			},
+			"features": schemaFeatures(supportLegacyTestSuite),
 
+			// Advanced feature flags
 			"skip_provider_registration": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("ARM_SKIP_PROVIDER_REGISTRATION", false),
 				Description: "Should the AzureRM Provider skip registering all of the Resource Providers that it supports, if they're not already registered?",
 			},
+
+			"storage_use_azuread": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_STORAGE_USE_AZUREAD", false),
+				Description: "Should the AzureRM Provider use AzureAD to access the Storage Data Plane API's?",
+			},
 		},
 
 		DataSourcesMap: dataSources,
 		ResourcesMap:   resources,
+	}
+
+	if !features.ThreePointOh() {
+		p.Schema["skip_credentials_validation"] = &schema.Schema{
+			Type:        schema.TypeBool,
+			Optional:    true,
+			DefaultFunc: schema.EnvDefaultFunc("ARM_SKIP_CREDENTIALS_VALIDATION", false),
+			Description: "[DEPRECATED] This will cause the AzureRM Provider to skip verifying the credentials being used are valid.",
+			Deprecated:  "This field is deprecated and will be removed in version 3.0 of the Azure Provider",
+		}
 	}
 
 	p.ConfigureFunc = providerConfigure(p)
@@ -189,14 +254,21 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 		var auxTenants []string
 		if v, ok := d.Get("auxiliary_tenant_ids").([]interface{}); ok && len(v) > 0 {
 			auxTenants = *utils.ExpandStringSlice(v)
-		} else {
-			if v := os.Getenv("ARM_AUXILIARY_TENANT_IDS"); v != "" {
-				auxTenants = strings.Split(v, ";")
-			}
+		} else if v := os.Getenv("ARM_AUXILIARY_TENANT_IDS"); v != "" {
+			auxTenants = strings.Split(v, ";")
 		}
 
 		if len(auxTenants) > 3 {
 			return nil, fmt.Errorf("The provider only supports 3 auxiliary tenant IDs")
+		}
+
+		metadataHost := d.Get("metadata_host").(string)
+		// TODO: remove in 3.0
+		// note: this is inline to avoid calling out deprecations for users not setting this
+		if v := d.Get("metadata_url").(string); v != "" {
+			metadataHost = v
+		} else if v := os.Getenv("ARM_METADATA_URL"); v != "" {
+			metadataHost = v
 		}
 
 		builder := &authentication.Builder{
@@ -206,6 +278,7 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 			TenantID:           d.Get("tenant_id").(string),
 			AuxiliaryTenantIDs: auxTenants,
 			Environment:        d.Get("environment").(string),
+			MetadataHost:       metadataHost,
 			MsiEndpoint:        d.Get("msi_endpoint").(string),
 			ClientCertPassword: d.Get("client_certificate_password").(string),
 			ClientCertPath:     d.Get("client_certificate_path").(string),
@@ -218,7 +291,7 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 			SupportsAuxiliaryTenants:       len(auxTenants) > 0,
 
 			// Doc Links
-			ClientSecretDocsLink: "https://www.terraform.io/docs/providers/azurerm/guides/service_principal_client_secret.html",
+			ClientSecretDocsLink: "https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret",
 		}
 
 		config, err := builder.Build()
@@ -241,6 +314,8 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 			PartnerId:                   d.Get("partner_id").(string),
 			DisableCorrelationRequestID: d.Get("disable_correlation_request_id").(bool),
 			DisableTerraformPartnerID:   d.Get("disable_terraform_partner_id").(bool),
+			Features:                    expandFeatures(d.Get("features").([]interface{})),
+			StorageUseAzureAD:           d.Get("storage_use_azuread").(bool),
 		}
 		client, err := clients.Build(p.StopContext(), clientBuilder)
 		if err != nil {
@@ -255,10 +330,8 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 			return nil
 		}
 
-		skipCredentialsValidation := d.Get("skip_credentials_validation").(bool)
-		if !skipCredentialsValidation {
-			// List all the available providers and their registration state to avoid unnecessary
-			// requests. This also lets us check if the provider credentials are correct.
+		if !skipProviderRegistration {
+			// List all the available providers and their registration state to avoid unnecessary requests.
 			ctx := client.StopContext
 			providerList, err := client.Resource.ProvidersClient.List(ctx, nil, "")
 			if err != nil {
@@ -267,14 +340,11 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 					"error: %s", err)
 			}
 
-			if !skipProviderRegistration {
-				availableResourceProviders := providerList.Values()
-				requiredResourceProviders := RequiredResourceProviders()
+			availableResourceProviders := providerList.Values()
+			requiredResourceProviders := resourceproviders.Required()
 
-				err := EnsureResourceProvidersAreRegistered(ctx, *client.Resource.ProvidersClient, availableResourceProviders, requiredResourceProviders)
-				if err != nil {
-					return nil, fmt.Errorf(resourceProviderRegistrationErrorFmt, err)
-				}
+			if err := resourceproviders.EnsureRegistered(ctx, *client.Resource.ProvidersClient, availableResourceProviders, requiredResourceProviders); err != nil {
+				return nil, fmt.Errorf(resourceProviderRegistrationErrorFmt, err)
 			}
 		}
 

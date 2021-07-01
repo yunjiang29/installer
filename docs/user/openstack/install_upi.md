@@ -17,37 +17,49 @@ of this method of installation.
 
 ## Table of Contents
 
-* [Prerequisites](#prerequisites)
-* [Install Ansible](#install-ansible)
-* [OpenShift Configuration Directory](#openshift-configuration-directory)
-* [Red Hat Enterprise Linux CoreOS (RHCOS)](#red-hat-enterprise-linux-coreos-rhcos)
-* [API and Ingress Floating IP Addresses](#api-and-ingress-floating-ip-addresses)
-* [Install Config](#install-config)
-  * [Fix the Node Subnet](#fix-the-node-subnet)
-  * [Empty Compute Pools](#empty-compute-pools)
-  * [Modify NetworkType (Required for Kuryr SDN)](#modify-networktype-required-for-kuryr-sdn)
-* [Edit Manifests](#edit-manifests)
-  * [Remove Machines and MachineSets](#remove-machines-and-machinesets)
-  * [Make control-plane nodes unschedulable](#make-control-plane-nodes-unschedulable)
-* [Ignition Config](#ignition-config)
-  * [Infra ID](#infra-id)
-  * [Bootstrap Ignition](#bootstrap-ignition)
-  * [Master Ignition](#master-ignition)
-* [Network Topology](#network-topology)
-  * [Security Groups](#security-groups)
-  * [Network, Subnet and external router](#network-subnet-and-external-router)
-  * [Subnet DNS (optional)](#subnet-dns-optional)
-* [Bootstrap](#bootstrap)
-* [Control Plane](#control-plane)
-  * [Control Plane Trunks (Kuryr SDN)](#control-plane-trunks-kuryr-sdn)
-  * [Wait for the Control Plane to Complete](#wait-for-the-control-plane-to-complete)
-  * [Access the OpenShift API](#access-the-openshift-api)
-  * [Delete the Bootstrap Resources](#delete-the-bootstrap-resources)
-* [Compute Nodes](#compute-nodes)
-  * [Compute Nodes Trunks (Kuryr SDN)](#compute-nodes-trunks-kuryr-sdn)
-  * [Approve the worker CSRs](#approve-the-worker-csrs)
-  * [Wait for the OpenShift Installation to Complete](#wait-for-the-openshift-installation-to-complete)
-* [Destroy the OpenShift Cluster](#destroy-the-openshift-cluster)
+
+- [Installing OpenShift on OpenStack User-Provisioned Infrastructure](#installing-openshift-on-openstack-user-provisioned-infrastructure)
+  - [Table of Contents](#table-of-contents)
+  - [Prerequisites](#prerequisites)
+  - [Install Ansible](#install-ansible)
+    - [RHEL](#rhel)
+    - [Fedora](#fedora)
+  - [OpenShift Configuration Directory](#openshift-configuration-directory)
+  - [Red Hat Enterprise Linux CoreOS (RHCOS)](#red-hat-enterprise-linux-coreos-rhcos)
+  - [API and Ingress Floating IP Addresses](#api-and-ingress-floating-ip-addresses)
+  - [Install Config](#install-config)
+    - [Configure the machineNetwork.CIDR apiVIP and ingressVIP](#configure-the-machinenetworkcidr-apivip-and-ingressvip)
+    - [Empty Compute Pools](#empty-compute-pools)
+    - [Modify NetworkType (Required for Kuryr SDN)](#modify-networktype-required-for-kuryr-sdn)
+  - [Edit Manifests](#edit-manifests)
+    - [Remove Machines and MachineSets](#remove-machines-and-machinesets)
+    - [Make control-plane nodes unschedulable](#make-control-plane-nodes-unschedulable)
+  - [Ignition Config](#ignition-config)
+    - [Infra ID](#infra-id)
+    - [Bootstrap Ignition](#bootstrap-ignition)
+      - [Edit the Bootstrap Ignition](#edit-the-bootstrap-ignition)
+      - [Upload the Boostrap Ignition](#upload-the-boostrap-ignition)
+        - [Example 1: Swift](#example-1-swift)
+        - [Example 2: Glance image service](#example-2-glance-image-service)
+    - [Create the Bootstrap Ignition Shim](#create-the-bootstrap-ignition-shim)
+      - [Ignition file served by server using self-signed certificate](#ignition-file-served-by-server-using-self-signed-certificate)
+    - [Master Ignition](#master-ignition)
+  - [Network Topology](#network-topology)
+    - [Security Groups](#security-groups)
+    - [Network, Subnet and external router](#network-subnet-and-external-router)
+    - [Subnet DNS (optional)](#subnet-dns-optional)
+  - [Bootstrap](#bootstrap)
+  - [Control Plane](#control-plane)
+    - [Control Plane Trunks (Kuryr SDN)](#control-plane-trunks-kuryr-sdn)
+    - [Wait for the Control Plane to Complete](#wait-for-the-control-plane-to-complete)
+    - [Access the OpenShift API](#access-the-openshift-api)
+    - [Delete the Bootstrap Resources](#delete-the-bootstrap-resources)
+  - [Compute Nodes](#compute-nodes)
+    - [Compute Nodes Trunks (Kuryr SDN)](#compute-nodes-trunks-kuryr-sdn)
+    - [Approve the worker CSRs](#approve-the-worker-csrs)
+    - [Wait for the OpenShift Installation to Complete](#wait-for-the-openshift-installation-to-complete)
+    - [Compute Nodes with SR-IOV NICs](#compute-nodes-with-sr-iov-nics)
+  - [Destroy the OpenShift Cluster](#destroy-the-openshift-cluster)
 
 ## Prerequisites
 
@@ -62,7 +74,7 @@ The requirements for UPI are broadly similar to the [ones for OpenStack IPI][ipi
   - input in the `openshift-install` wizard
 - Nova flavors
   - inventory: `os_flavor_master` and `os_flavor_worker`
-- An external subnet you want to use for floating IP addresses
+- An external subnet for external connectivity. Required if any of the floating IPs is set in the inventory.
   - inventory: `os_external_network`
 - The `openshift-install` binary
 - A subnet range for the Nova servers / OpenShift Nodes, that does not conflict with your existing network
@@ -88,6 +100,30 @@ RHEL 8 and may not work properly when run on RHEL 7.
 
 This repository contains [Ansible playbooks][ansible-upi] to deploy OpenShift on OpenStack.
 
+They can be downloaded from Github with this script:
+
+```sh
+RELEASE="release-4.6"; xargs -n 1 curl -O <<< "
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/bootstrap.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/common.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/compute-nodes.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/control-plane.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-bootstrap.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-compute-nodes.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-control-plane.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-load-balancers.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-network.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-security-groups.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/down-containers.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/inventory.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/network.yaml
+        https://raw.githubusercontent.com/openshift/installer/${RELEASE}/upi/openstack/security-groups.yaml"
+```
+
+For installing a different version, change the branch (`release-4.6`)
+accordingly (e.g. `release-4.7`). Note that `down-containers.yaml` was only
+introduced in `release-4.6`.
+
 **Requirements:**
 
 * Python
@@ -109,13 +145,13 @@ sudo subscription-manager repos --disable=* # if not done already
 sudo subscription-manager repos \
   --enable=rhel-8-for-x86_64-baseos-rpms \
   --enable=openstack-16-tools-for-rhel-8-x86_64-rpms \
-  --enable=ansible-2.8-for-rhel-8-x86_64-rpms \
+  --enable=ansible-2.9-for-rhel-8-x86_64-rpms \
   --enable=rhel-8-for-x86_64-appstream-rpms
 ```
 
 Then install the packages:
 ```sh
-sudo yum install python3-openstackclient ansible python3-openstacksdk python3-netaddr
+sudo dnf install python3-openstackclient ansible python3-openstacksdk python3-netaddr
 ```
 
 Make sure that `python` points to Python3:
@@ -128,7 +164,7 @@ sudo alternatives --set python /usr/bin/python3
 This command installs all required dependencies on Fedora:
 
 ```sh
-sudo dnf install python-openstackclient ansible python-openstacksdk python-netaddr
+sudo dnf install python3-openstackclient ansible python3-openstacksdk python3-netaddr
 ```
 
 [ansible-upi]: ../../../upi/openstack "Ansible Playbooks for Openstack UPI"
@@ -164,6 +200,16 @@ $ openstack image create --container-format=bare --disk-format=qcow2 --file rhco
 
 **NOTE:** Depending on your OpenStack environment you can upload the RHCOS image as `raw` or `qcow2`. See [Disk and container formats for images](https://docs.openstack.org/image-guide/introduction.html#disk-and-container-formats-for-images) for more information.
 
+[qemu_guest_agent]: https://docs.openstack.org/nova/latest/admin/configuration/hypervisor-kvm.html
+If the RHCOS image being used supports it,  the [KVM Qemu Guest Agent][qemu_guest_agent] may be used to enable optional
+access between OpenStack KVM hypervisors and the cluster nodes.
+
+To enable this feature, you must add the `hw_qemu_guest_agent=yes` property to the image:
+
+```
+$ openstack image rhcos update --property hw_qemu_guest_agent=yes
+```
+
 Finally validate that the image was successfully created:
 
 ```sh
@@ -175,13 +221,17 @@ $ openstack image show rhcos
 
 ## API and Ingress Floating IP Addresses
 
-**NOTE**: throughout this document, we will use `203.0.113.23` as the public IP address for the OpenShift API endpoint and `203.0.113.19` as the public IP for the ingress (`*.apps`) endpoint.
+If the variables `os_api_fip`, `os_ingress_fip` and `os_bootstrap_fip` are found in `inventory.yaml`, the corresponding floating IPs will be attached to the API load balancer, to the worker nodes load balancer and to the temporary machine used for the install process, respectively. Note that `os_external_network` is a requirement for those.
+
+**NOTE**: throughout this document, we will use `203.0.113.23` as the public IP address for the OpenShift API endpoint and `203.0.113.19` as the public IP for the ingress (`*.apps`) endpoint. `203.0.113.20` will be the public IP used for the bootstrap machine.
 
 ```sh
 $ openstack floating ip create --description "OpenShift API" <external>
 => 203.0.113.23
 $ openstack floating ip create --description "OpenShift Ingress" <external>
 => 203.0.113.19
+$ openstack floating ip create --description "bootstrap machine" <external>
+=> 203.0.113.20
 ```
 
 The OpenShift API (for the OpenShift administrators and app developers) will be at `api.<cluster name>.<cluster domain>` and the Ingress (for the apps' end users) at `*.apps.<cluster name>.<cluster domain>`.
@@ -229,26 +279,73 @@ $ tree
 └── install-config.yaml
 ```
 
-### Fix the Node Subnet
+### Configure the machineNetwork.CIDR apiVIP and ingressVIP
+The `machineNetwork` represents the OpenStack network which will be used to connect all the OpenShift cluster nodes.
+The `machineNetwork.CIDR` defines the IP range, in CIDR notation, from which the installer will choose what IP addresses
+to assign the nodes.  The `apiVIP` and `ingressVIP` are the IP addresses the installer will assign to the cluster API and
+ingress VIPs, respectively.
+In the previous steps, the installer added default values for the `machineNetwork.CIDR`, and then it picked the
+5th and 7th IP addresses from that range to assign to `apiVIP` and `ingressVIP`.
+`machineNetwork.CIDR` needs to match the IP range specified by `os_subnet_range` in the `inventory.yaml` file.
 
-The installer added a default IP range for the OpenShift nodes. It must match the range for the Neutron subnet you'll create later on.
+When the installer creates the manifest files from an existing `install-config.yaml` file, it validates that the
+`apiVIP` and `ingressVIP` fall within the IP range specified by `machineNetwork.CIDR`. If they do not, it errors out.
+If you change the value of `machineNetwork.CIDR` you must make sure the `apiVIP` and `ingressVIP` values still fall within
+the new range. There are two options for setting the `apiVIP` and `ingressVIP`. If you know the values you want to use,
+you can specify them in the `install-config.yaml` file. If you want the installer to pick the 5th and 7th IP addresses in the
+new range, you need to remove the `apiVIP` and `ingressVIP` entries from the `install-config.yaml` file.
 
-We're going to use a custom subnet to illustrate how that can be done.
+To illustrate the process, we will use '192.0.2.0/24' as an example. It defines a usable IP range from
+192.0.2.1 to 192.0.2.254. There are some IP addresses that should be avoided because they are usually taken up or
+reserved. For example, the first address (.1) is usually assigned to a router. The DHCP and DNS servers will use a few
+more addresses, usually .2, .3, .11 and .12. The actual addresses used by these services depend on the configuration of
+the OpenStack deployment in use. You should check your OpenStack deployment.
 
-Our range will be `192.0.2.0/24` so we need to add that value to
-`install-config.yaml`. Look under `networking` -> `machineNetwork` -> network -> `cidr`.
 
-This command will do it for you:
+The following script modifies the value of `machineNetwork.CIDR` in the `install-config.yaml` file.
 
 ```sh
-$ python -c 'import yaml;
-path = "install-config.yaml";
-data = yaml.safe_load(open(path));
-data["networking"]["machineNetwork"][0]["cidr"] = "192.0.2.0/24";
+$ python -c 'import yaml
+path = "install-config.yaml"
+data = yaml.safe_load(open(path))
+data["networking"]["machineNetwork"][0]["cidr"] = "192.0.2.0/24"
 open(path, "w").write(yaml.dump(data, default_flow_style=False))'
 ```
 
-**NOTE**: All the scripts in this guide work with Python 3 as well as Python 2.
+Next, we need to correct the `apiVIP` and `ingressVIP` values.
+
+The following script will clear the values from the `install-config.yaml` file so that the installer will pick
+the 5th and 7th IP addresses in the new range, 192.0.2.5 and 192.0.2.7.
+
+```sh
+$ python -c 'import yaml
+import sys
+path = "install-config.yaml"
+data = yaml.safe_load(open(path))
+if "apiVIP" in data["platform"]["openstack"]:
+   del data["platform"]["openstack"]["apiVIP"]
+if "ingressVIP" in data["platform"]["openstack"]:
+   del data["platform"]["openstack"]["ingressVIP"]
+open(path, "w").write(yaml.dump(data, default_flow_style=False))'
+```
+
+If you want to specify the values yourself, you can use the following script, which sets them to 192.0.2.8
+and 192.0.2.9.
+
+```sh
+$ python -c 'import yaml
+import sys
+path = "install-config.yaml"
+data = yaml.safe_load(open(path))
+if "apiVIP" in data["platform"]["openstack"]:
+   data["platform"]["openstack"]["apiVIP"] = "192.0.2.8"
+if "ingressVIP" in data["platform"]["openstack"]:
+   data["platform"]["openstack"]["ingressVIP"] = "192.0.2.9"
+open(path, "w").write(yaml.dump(data, default_flow_style=False))'
+```
+
+**NOTE**: All the scripts in this guide work with Python 3 as well as Python 2. You can also choose to edit the
+`install-config.yaml` file by hand.
 
 ### Empty Compute Pools
 
@@ -260,10 +357,10 @@ This command will do it for you:
 
 ```sh
 $ python -c '
-import yaml;
-path = "install-config.yaml";
-data = yaml.safe_load(open(path));
-data["compute"][0]["replicas"] = 0;
+import yaml
+path = "install-config.yaml"
+data = yaml.safe_load(open(path))
+data["compute"][0]["replicas"] = 0
 open(path, "w").write(yaml.dump(data, default_flow_style=False))'
 ```
 
@@ -277,10 +374,10 @@ This command will do it for you:
 
 ```sh
 $ python -c '
-import yaml;
-path = "install-config.yaml";
-data = yaml.safe_load(open(path));
-data["networking"]["networkType"] = "Kuryr";
+import yaml
+path = "install-config.yaml"
+data = yaml.safe_load(open(path))
+data["networking"]["networkType"] = "Kuryr"
 open(path, "w").write(yaml.dump(data, default_flow_style=False))'
 ```
 
@@ -311,17 +408,6 @@ $ tree
 │   ├── cluster-proxy-01-config.yaml
 │   ├── cluster-scheduler-02-config.yml
 │   ├── cvo-overrides.yaml
-│   ├── etcd-ca-bundle-configmap.yaml
-│   ├── etcd-client-secret.yaml
-│   ├── etcd-host-service-endpoints.yaml
-│   ├── etcd-host-service.yaml
-│   ├── etcd-metric-client-secret.yaml
-│   ├── etcd-metric-serving-ca-configmap.yaml
-│   ├── etcd-metric-signer-secret.yaml
-│   ├── etcd-namespace.yaml
-│   ├── etcd-service.yaml
-│   ├── etcd-serving-ca-configmap.yaml
-│   ├── etcd-signer-secret.yaml
 │   ├── kube-cloud-config.yaml
 │   ├── kube-system-configmap-root-ca.yaml
 │   ├── machine-config-server-tls-secret.yaml
@@ -363,10 +449,10 @@ Currently [emptying the compute pools][empty-compute-pools] makes control-plane 
 
 ```sh
 $ python -c '
-import yaml;
+import yaml
 path = "manifests/cluster-scheduler-02-config.yml"
-data = yaml.safe_load(open(path));
-data["spec"]["mastersSchedulable"] = False;
+data = yaml.safe_load(open(path))
+data["spec"]["mastersSchedulable"] = False
 open(path, "w").write(yaml.dump(data, default_flow_style=False))'
 ```
 
@@ -439,7 +525,8 @@ import os
 with open('bootstrap.ign', 'r') as f:
     ignition = json.load(f)
 
-files = ignition['storage'].get('files', [])
+storage = ignition.get('storage', {})
+files = storage.get('files', [])
 
 infra_id = os.environ.get('INFRA_ID', 'openshift').encode()
 hostname_b64 = base64.standard_b64encode(infra_id + b'-bootstrap\n').decode().strip()
@@ -449,15 +536,13 @@ files.append(
     'mode': 420,
     'contents': {
         'source': 'data:text/plain;charset=utf-8;base64,' + hostname_b64,
-        'verification': {}
     },
-    'filesystem': 'root',
 })
 
 ca_cert_path = os.environ.get('OS_CACERT', '')
 if ca_cert_path:
     with open(ca_cert_path, 'r') as f:
-        ca_cert = f.read().encode()
+        ca_cert = f.read().encode().strip()
         ca_cert_b64 = base64.standard_b64encode(ca_cert).decode().strip()
 
     files.append(
@@ -466,12 +551,11 @@ if ca_cert_path:
         'mode': 420,
         'contents': {
             'source': 'data:text/plain;charset=utf-8;base64,' + ca_cert_b64,
-            'verification': {}
         },
-        'filesystem': 'root',
     })
 
-ignition['storage']['files'] = files;
+storage['files'] = files
+ignition['storage'] = storage
 
 with open('bootstrap.ign', 'w') as f:
     json.dump(ignition, f)
@@ -506,17 +590,17 @@ https://static.example.com/bootstrap.ign
 ##### Example 1: Swift
 
 The `swift` client is needed for enabling listing on the container.
-
-Create the `<container_name>` container and upload the `bootstrap.ign` file:
+It can be installed by the following command:
 
 ```sh
-$ swift upload <container_name> bootstrap.ign
+$ sudo dnf install python3-swiftclient
 ```
 
-Make the container accessible:
+Create the `<container_name>` (e.g. $INFRA_ID) container and upload the `bootstrap.ign` file:
 
 ```sh
-$ swift post <container_name> --read-acl ".r:*,.rlistings"
+$ openstack container create <container_name> --public
+$ openstack object create <container_name> bootstrap.ign
 ```
 
 Get the `storage_url` from the output:
@@ -545,15 +629,17 @@ Get Glance public URL:
 $ openstack catalog show image
 ```
 
-By default Glance service doesn't allow anonymous access to the data. So, if you use Glance to store the ignition config, then you also need to provide a valid auth token in the `ignition.config.append.httpHeaders` field.
+By default Glance service doesn't allow anonymous access to the data. So, if you use Glance to store the ignition config, then you also need to provide a valid auth token in the `ignition.config.merge.httpHeaders` field.
 
-To obtain the token execute:
+The token can be obtained with this command:
 
 ```sh
 openstack token issue -c id -f value
 ```
 
-The command will return the token to be added to the `ignition.config.append[0].httpHeaders` property in the Bootstrap Ignition Shim (see [below](#create-the-bootstrap-ignition-shim)):
+Note that this token can be generated as any OpenStack user with Glance read access; this particular token will only be used for downloading the Ignition file.
+
+The command will return the token to be added to the `ignition.config.merge[0].httpHeaders` property in the Bootstrap Ignition Shim (see [below](#create-the-bootstrap-ignition-shim)):
 
 ```json
 "httpHeaders": [
@@ -578,52 +664,43 @@ Create a file called `$INFRA_ID-bootstrap-ignition.json` (fill in your `infraID`
 {
   "ignition": {
     "config": {
-      "append": [
+      "merge": [
         {
           "source": "https://static.example.com/bootstrap.ign",
-          "verification": {},
-          "httpHeaders": []
         }
       ]
     },
-    "security": {},
-    "timeouts": {},
-    "version": "2.4.0"
-  },
-  "networkd": {},
-  "passwd": {},
-  "storage": {},
-  "systemd": {}
+    "version": "3.1.0"
+  }
 }
 ```
 
-Change the `ignition.config.append.source` field to the URL hosting the `bootstrap.ign` file you've uploaded previously.
+Change the `ignition.config.merge.source` field to the URL hosting the `bootstrap.ign` file you've uploaded previously.
 
 #### Ignition file served by server using self-signed certificate
 
-In order for the bootstrap node to retrieve the ignition file when it is served by a server using self-signed certificate, it is necessary to add the CA certificate to the `ignition.security.tls.certificateAuthorities` in the ignition file. For instance:
+In order for the bootstrap node to retrieve the ignition file when it is served by a server using self-signed certificate, it is necessary to add the CA certificate to the `ignition.security.tls.certificateAuthorities` in the ignition file. Here is how you might do it.
 
+Encode the certificate to base64:
+```sh
+$ openssl x509 -in cacert.pem | base64 -w0
+```
+
+Add the base64-encoded certificate to the ignition shim:
 ```json
 {
   "ignition": {
-    "config": {},
     "security": {
       "tls": {
         "certificateAuthorities": [
           {
             "source": "data:text/plain;charset=utf-8;base64,<base64_encoded_certificate>",
-            "verification": {}
           }
         ]
       }
     },
-    "timeouts": {},
-    "version": "2.4.0"
-  },
-  "networkd": {},
-  "passwd": {},
-  "storage": {},
-  "systemd": {}
+    "version": "3.1.0"
+  }
 }
 ```
 
@@ -638,11 +715,13 @@ We will deploy three Control plane (master) nodes. Their Ignition configs can be
 ```sh
 $ for index in $(seq 0 2); do
     MASTER_HOSTNAME="$INFRA_ID-master-$index\n"
-    python -c "import base64, json, sys;
-ignition = json.load(sys.stdin);
-files = ignition['storage'].get('files', []);
-files.append({'path': '/etc/hostname', 'mode': 420, 'contents': {'source': 'data:text/plain;charset=utf-8;base64,' + base64.standard_b64encode(b'$MASTER_HOSTNAME').decode().strip(), 'verification': {}}, 'filesystem': 'root'});
-ignition['storage']['files'] = files;
+    python -c "import base64, json, sys
+ignition = json.load(sys.stdin)
+storage = ignition.get('storage', {})
+files = storage.get('files', [])
+files.append({'path': '/etc/hostname', 'mode': 420, 'contents': {'source': 'data:text/plain;charset=utf-8;base64,' + base64.standard_b64encode(b'$MASTER_HOSTNAME').decode().strip()}})
+storage['files'] = files
+ignition['storage'] = storage
 json.dump(ignition, sys.stdout)" <master.ign >"$INFRA_ID-master-$index-ignition.json"
 done
 ```
@@ -666,7 +745,6 @@ $ ansible-playbook -i inventory.yaml security-groups.yaml
 ```
 
 The playbook creates one Security group for the Control Plane and one for the Compute nodes, then attaches rules for enabling communication between the nodes.
-
 ### Network, Subnet and external router
 
 ```sh
@@ -779,7 +857,9 @@ $ oc get pods -A
 $ ansible-playbook -i inventory.yaml down-bootstrap.yaml
 ```
 
-The teardown playbook deletes the bootstrap port, server and floating IP address.
+The teardown playbook deletes the bootstrap port and server.
+
+Now the bootstrap floating IP can also be destroyed.
 
 If you haven't done so already, you should also disable the bootstrap Ignition URL.
 
@@ -797,6 +877,34 @@ The workers need no ignition override.
 
 If `os_networking_type` is set to `Kuryr` in the Ansible inventory, the playbook creates the Trunks for Kuryr to plug the containers into the OpenStack SDN.
 
+### Compute Nodes with SR-IOV NICs
+
+Using single root I/O virtualization (SR-IOV) networking as an additional network in OpenShift can be beneficial for applications that require high bandwidth and low latency. To enable this in your cluster, you will need to install the [SR-IOV Network Operator](https://docs.openshift.com/container-platform/4.6/networking/hardware_networks/installing-sriov-operator.html). If you are not sure whether your cluster supports this feature, please refer to the [SR-IOV hardware networks documentation](https://docs.openshift.com/container-platform/4.6/networking/hardware_networks/about-sriov.html). If you are planning an openstack deployment with SR-IOV networks and need addition resources, check the [OpenStack SR-IOV deployment docs](https://access.redhat.com/documentation/en-us/red_hat_openstack_platform/16.1/html-single/network_functions_virtualization_planning_and_configuration_guide/index#assembly_sriov_parameters). Once you meet these requirements, you can start provisioning an SR-IOV network and subnet in OpenStack.
+
+```sh
+openstack network create radio --provider-physical-network radio --provider-network-type vlan --provider-segment 120
+
+openstack subnet create radio --network radio --subnet-range <your CIDR range> --dhcp
+```
+
+Your compute nodes will need to have two types of ports for this feature to work. One port needs to connect the node to your OpenShift network so that it can join the cluster and communicate with the other nodes. The other type of port is for your SR-IOV traffic. The OpenShift networking port should be created the same way we normally create ports for compute nodes.
+
+```sh
+openstack port create os_port_worker_0 --network <infraID>-network --security-group <infraID>-worker --fixed-ip subnet=<infraID>-nodes,ip-address=<a fixed IP> --allowed-address ip-address=<infraID>-ingress-port
+```
+
+The SR-IOV port(s) must be created explicitly by the user and passed as a NIC during instance creation, otherwise the `vnic-type` will not be `direct` and it will not work.
+
+```sh
+openstack port create radio_port --vnic-type direct --network radio --fixed-ip subnet=radio,ip-address=<a fixed ip> --tag=radio --disable-port-security
+```
+
+When you create your instance, make sure that the SR-IOV port and the OCP port you created for it are added as NICs.
+
+```sh
+openstack server create --image <infraID>-rhcos --flavor ocp --user-data <ocp project>/build-artifacts/worker.ign --nic port-id=<os_port_worker_0 ID> --nic port-id=<radio_port ID> --config-drive true worker-<worker_id>.<cluster_name>.<cluster_domain>
+```
+
 ### Approve the worker CSRs
 
 Even after they've booted up, the workers will not show up in `oc get nodes`.
@@ -813,13 +921,13 @@ Eventually, you should see `Pending` entries looking like this
 $ oc get csr -A
 NAME        AGE    REQUESTOR                                                                   CONDITION
 csr-2scwb   16m    system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
-csr-5jwqf   16m    system:node:openshift-qlvwv-master-0                                         Approved,Issued
+csr-5jwqf   16m    system:node:openshift-qlvwv-master-0                                        Approved,Issued
 csr-88jp8   116s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
-csr-9dt8f   15m    system:node:openshift-qlvwv-master-1                                         Approved,Issued
+csr-9dt8f   15m    system:node:openshift-qlvwv-master-1                                        Approved,Issued
 csr-bqkw5   16m    system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
 csr-dpprd   6s     system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
 csr-dtcws   24s    system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
-csr-lj7f9   16m    system:node:openshift-qlvwv-master-2                                         Approved,Issued
+csr-lj7f9   16m    system:node:openshift-qlvwv-master-2                                        Approved,Issued
 csr-lrtlk   15m    system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
 csr-wkm94   16m    system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
 ```
@@ -895,6 +1003,7 @@ $ ansible-playbook -i inventory.yaml  \
 	down-control-plane.yaml  \
 	down-compute-nodes.yaml  \
 	down-load-balancers.yaml \
+	down-containers.yaml     \
 	down-network.yaml        \
 	down-security-groups.yaml
 ```
@@ -905,3 +1014,5 @@ The playbook `down-load-balancers.yaml` idempotently deletes the load balancers 
 `down-load-balancers.yaml` playbook once the load balancers have transitioned to `ACTIVE`.
 
 Then, remove the `api` and `*.apps` DNS records.
+
+The floating IPs can also be deleted if not useful any more.

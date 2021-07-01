@@ -5,7 +5,7 @@ import (
 )
 
 func init() {
-	registerFactory("irmc", newIRMCAccessDetails)
+	RegisterFactory("irmc", newIRMCAccessDetails, []string{})
 }
 
 func newIRMCAccessDetails(parsedURL *url.URL, disableCertificateVerification bool) (AccessDetails, error) {
@@ -52,6 +52,9 @@ func (a *iRMCAccessDetails) DriverInfo(bmcCreds Credentials) map[string]interfac
 		"irmc_username": bmcCreds.Username,
 		"irmc_password": bmcCreds.Password,
 		"irmc_address":  a.hostname,
+		"ipmi_username": bmcCreds.Username,
+		"ipmi_password": bmcCreds.Password,
+		"ipmi_address":  a.hostname,
 	}
 
 	if a.disableCertificateVerification {
@@ -74,7 +77,7 @@ func (a *iRMCAccessDetails) ManagementInterface() string {
 }
 
 func (a *iRMCAccessDetails) PowerInterface() string {
-	return ""
+	return "ipmitool"
 }
 
 func (a *iRMCAccessDetails) RAIDInterface() string {
@@ -83,4 +86,8 @@ func (a *iRMCAccessDetails) RAIDInterface() string {
 
 func (a *iRMCAccessDetails) VendorInterface() string {
 	return ""
+}
+
+func (a *iRMCAccessDetails) SupportsSecureBoot() bool {
+	return true
 }

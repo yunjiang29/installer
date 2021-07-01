@@ -25,6 +25,13 @@ const (
 
 	// PermissionDeleteNetworking is a set of permissions required when the installer destroys networking resources.
 	PermissionDeleteNetworking PermissionGroup = "delete-networking"
+
+	// PermissionDeleteSharedNetworking is a set of permissions required when the installer destroys resources from a shared-network cluster.
+	PermissionDeleteSharedNetworking PermissionGroup = "delete-shared-networking"
+
+	// PermissionDeleteSharedInstanceRole is a set of permissions required when the installer destroys resources from a
+	// cluster with user-supplied IAM roles for instances.
+	PermissionDeleteSharedInstanceRole PermissionGroup = "delete-shared-instance-role"
 )
 
 var permissions = map[PermissionGroup][]string{
@@ -173,11 +180,13 @@ var permissions = map[PermissionGroup][]string{
 	PermissionDeleteBase: {
 		"autoscaling:DescribeAutoScalingGroups",
 		"ec2:DeleteNetworkInterface",
+		"ec2:DeleteTags",
 		"ec2:DeleteVolume",
 		"elasticloadbalancing:DeleteTargetGroup",
 		"elasticloadbalancing:DescribeTargetGroups",
 		"iam:DeleteAccessKey",
 		"iam:DeleteUser",
+		"iam:ListAttachedRolePolicies",
 		"iam:ListInstanceProfiles",
 		"iam:ListRolePolicies",
 		"iam:ListUserPolicies",
@@ -214,6 +223,14 @@ var permissions = map[PermissionGroup][]string{
 		"ec2:DetachInternetGateway",
 		"ec2:DisassociateRouteTable",
 		"ec2:ReplaceRouteTableAssociation",
+	},
+	// Permissions required for deleting a cluster with shared network resources
+	PermissionDeleteSharedNetworking: {
+		"tag:UnTagResources",
+	},
+	// Permissions required for deleting a cluster with shared instance roles
+	PermissionDeleteSharedInstanceRole: {
+		"iam:UntagRole",
 	},
 }
 

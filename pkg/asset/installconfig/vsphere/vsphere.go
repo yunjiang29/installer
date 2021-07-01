@@ -5,14 +5,16 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
-	"gopkg.in/AlecAivazis/survey.v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/openshift/installer/pkg/types/vsphere"
 	vspheretypes "github.com/openshift/installer/pkg/types/vsphere"
@@ -20,8 +22,6 @@ import (
 )
 
 const root = "/..."
-const distributedVirtualPortGroupType = "DistributedVirtualPortgroup"
-const networkType = "Network"
 
 // vCenterClient contains the login info/creds and client for the vCenter.
 // They are contained in a single struct to facilitate client creation
@@ -73,7 +73,10 @@ func Platform() (*vsphere.Platform, error) {
 		return nil, err
 	}
 
-	apiVIP, ingressVIP := getVIPs()
+	apiVIP, ingressVIP, err := getVIPs()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get VIPs")
+	}
 
 	platform := &vsphere.Platform{
 		Datacenter:       dc,
@@ -94,17 +97,22 @@ func Platform() (*vsphere.Platform, error) {
 // If creating the client fails, an error is returned.
 func getClients() (*vCenterClient, error) {
 	var vcenter, username, password string
-	survey.Ask([]*survey.Question{
+
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Input{
 				Message: "vCenter",
-				Help:    "The hostname of the vCenter to be used for installation.",
+				Help:    "The domain name or IP address of the vCenter to be used for installation.",
 			},
-			Validate: survey.Required,
+			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
+				return validate.Host(ans.(string))
+			}),
 		},
-	}, &vcenter)
+	}, &vcenter); err != nil {
+		return nil, errors.Wrap(err, "failed UserInput")
+	}
 
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Input{
 				Message: "Username",
@@ -112,9 +120,11 @@ func getClients() (*vCenterClient, error) {
 			},
 			Validate: survey.Required,
 		},
-	}, &username)
+	}, &username); err != nil {
+		return nil, errors.Wrap(err, "failed UserInput")
+	}
 
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Password{
 				Message: "Password",
@@ -122,7 +132,9 @@ func getClients() (*vCenterClient, error) {
 			},
 			Validate: survey.Required,
 		},
-	}, &password)
+	}, &password); err != nil {
+		return nil, errors.Wrap(err, "failed UserInput")
+	}
 
 	// There is a noticeable delay when creating the client, so let the user know what's going on.
 	logrus.Infof("Connecting to vCenter %s", vcenter)
@@ -163,21 +175,22 @@ func getDataCenter(ctx context.Context, finder *find.Finder, client *vim25.Clien
 		return "", "", errors.New("did not find any datacenters")
 	}
 	if len(dataCenters) == 1 {
-		logrus.Infof("Defaulting to only available datacenter: %s", dataCenters[0].Name())
-		dc := dataCenters[0]
-		return dc.Name(), formatPath(dc.InventoryPath), nil
+		name := strings.TrimPrefix(dataCenters[0].InventoryPath, "/")
+		logrus.Infof("Defaulting to only available datacenter: %s", name)
+		return name, dataCenters[0].InventoryPath, nil
 	}
 
 	dataCenterPaths := make(map[string]string)
 	var dataCenterChoices []string
 	for _, dc := range dataCenters {
-		dataCenterPaths[dc.Name()] = dc.InventoryPath
-		dataCenterChoices = append(dataCenterChoices, dc.Name())
+		name := strings.TrimPrefix(dc.InventoryPath, "/")
+		dataCenterPaths[name] = dc.InventoryPath
+		dataCenterChoices = append(dataCenterChoices, name)
 	}
 	sort.Strings(dataCenterChoices)
 
 	var selectedDataCenter string
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Select{
 				Message: "Datacenter",
@@ -186,16 +199,18 @@ func getDataCenter(ctx context.Context, finder *find.Finder, client *vim25.Clien
 			},
 			Validate: survey.Required,
 		},
-	}, &selectedDataCenter)
-	selectedDataCenterPath := formatPath(dataCenterPaths[selectedDataCenter])
-	return selectedDataCenter, selectedDataCenterPath, nil
+	}, &selectedDataCenter); err != nil {
+		return "", "", errors.Wrap(err, "failed UserInput")
+	}
+
+	return selectedDataCenter, dataCenterPaths[selectedDataCenter], nil
 }
 
 func getCluster(ctx context.Context, path string, finder *find.Finder, client *vim25.Client) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	clusters, err := finder.ClusterComputeResourceList(ctx, path)
+	clusters, err := finder.ClusterComputeResourceList(ctx, formatPath(path))
 	if err != nil {
 		return "", errors.Wrap(err, "unable to list clusters")
 	}
@@ -205,18 +220,20 @@ func getCluster(ctx context.Context, path string, finder *find.Finder, client *v
 		return "", errors.New("did not find any clusters")
 	}
 	if len(clusters) == 1 {
-		logrus.Infof("Defaulting to only available cluster: %s", clusters[0].Name())
-		return clusters[0].Name(), nil
+		name := strings.TrimPrefix(clusters[0].InventoryPath, path+"/host/")
+		logrus.Infof("Defaulting to only available cluster: %s", name)
+		return name, nil
 	}
 
 	var clusterChoices []string
 	for _, c := range clusters {
-		clusterChoices = append(clusterChoices, c.Name())
+		name := strings.TrimPrefix(c.InventoryPath, path+"/host/")
+		clusterChoices = append(clusterChoices, name)
 	}
 	sort.Strings(clusterChoices)
 
 	var selectedcluster string
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Select{
 				Message: "Cluster",
@@ -225,7 +242,9 @@ func getCluster(ctx context.Context, path string, finder *find.Finder, client *v
 			},
 			Validate: survey.Required,
 		},
-	}, &selectedcluster)
+	}, &selectedcluster); err != nil {
+		return "", errors.Wrap(err, "failed UserInput")
+	}
 
 	return selectedcluster, nil
 }
@@ -234,7 +253,7 @@ func getDataStore(ctx context.Context, path string, finder *find.Finder, client 
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	dataStores, err := finder.DatastoreList(ctx, path)
+	dataStores, err := finder.DatastoreList(ctx, formatPath(path))
 	if err != nil {
 		return "", errors.Wrap(err, "unable to list datastores")
 	}
@@ -255,7 +274,7 @@ func getDataStore(ctx context.Context, path string, finder *find.Finder, client 
 	sort.Strings(dataStoreChoices)
 
 	var selectedDataStore string
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Select{
 				Message: "Default Datastore",
@@ -264,7 +283,10 @@ func getDataStore(ctx context.Context, path string, finder *find.Finder, client 
 			},
 			Validate: survey.Required,
 		},
-	}, &selectedDataStore)
+	}, &selectedDataStore); err != nil {
+		return "", errors.Wrap(err, "failed UserInput")
+	}
+
 	return selectedDataStore, nil
 }
 
@@ -272,7 +294,7 @@ func getNetwork(ctx context.Context, path string, finder *find.Finder, client *v
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	networks, err := finder.NetworkList(ctx, path)
+	networks, err := finder.NetworkList(ctx, formatPath(path))
 	if err != nil {
 		return "", errors.Wrap(err, "unable to list networks")
 	}
@@ -287,9 +309,15 @@ func getNetwork(ctx context.Context, path string, finder *find.Finder, client *v
 		return n.Name(), nil
 	}
 
+	validNetworkTypes := sets.NewString(
+		"DistributedVirtualPortgroup",
+		"Network",
+		"OpaqueNetwork",
+	)
+
 	var networkChoices []string
 	for _, network := range networks {
-		if network.Reference().Type == distributedVirtualPortGroupType || network.Reference().Type == networkType {
+		if validNetworkTypes.Has(network.Reference().Type) {
 			n := network.(networkNamer)
 			networkChoices = append(networkChoices, n.Name())
 		}
@@ -300,7 +328,7 @@ func getNetwork(ctx context.Context, path string, finder *find.Finder, client *v
 	sort.Strings(networkChoices)
 
 	var selectednetwork string
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Select{
 				Message: "Network",
@@ -309,15 +337,17 @@ func getNetwork(ctx context.Context, path string, finder *find.Finder, client *v
 			},
 			Validate: survey.Required,
 		},
-	}, &selectednetwork)
+	}, &selectednetwork); err != nil {
+		return "", errors.Wrap(err, "failed UserInput")
+	}
 
 	return selectednetwork, nil
 }
 
-func getVIPs() (string, string) {
+func getVIPs() (string, string, error) {
 	var apiVIP, ingressVIP string
 
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Input{
 				Message: "Virtual IP Address for API",
@@ -327,20 +357,28 @@ func getVIPs() (string, string) {
 				return validate.IP((ans).(string))
 			}),
 		},
-	}, &apiVIP)
+	}, &apiVIP); err != nil {
+		return "", "", errors.Wrap(err, "failed UserInput")
+	}
 
-	survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Input{
 				Message: "Virtual IP Address for Ingress",
 				Help:    "The VIP to be used for ingress to the cluster.",
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
+				if apiVIP == (ans.(string)) {
+					return fmt.Errorf("%q should not be equal to the Virtual IP address for the API", ans.(string))
+				}
 				return validate.IP((ans).(string))
 			}),
 		},
-	}, &ingressVIP)
-	return apiVIP, ingressVIP
+	}, &ingressVIP); err != nil {
+		return "", "", errors.Wrap(err, "failed UserInput")
+	}
+
+	return apiVIP, ingressVIP, nil
 }
 
 // formatPath is a helper function that appends "/..." to enable recursive

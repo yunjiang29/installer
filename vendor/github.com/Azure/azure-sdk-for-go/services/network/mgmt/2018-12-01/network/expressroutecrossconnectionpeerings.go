@@ -38,7 +38,8 @@ func NewExpressRouteCrossConnectionPeeringsClient(subscriptionID string) Express
 }
 
 // NewExpressRouteCrossConnectionPeeringsClientWithBaseURI creates an instance of the
-// ExpressRouteCrossConnectionPeeringsClient client.
+// ExpressRouteCrossConnectionPeeringsClient client using a custom endpoint.  Use this when interacting with an Azure
+// cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewExpressRouteCrossConnectionPeeringsClientWithBaseURI(baseURI string, subscriptionID string) ExpressRouteCrossConnectionPeeringsClient {
 	return ExpressRouteCrossConnectionPeeringsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -80,7 +81,7 @@ func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdate(ctx conte
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -115,13 +116,38 @@ func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdatePreparer(c
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdateSender(req *http.Request) (future ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ExpressRouteCrossConnectionPeeringsClient) (erccp ExpressRouteCrossConnectionPeering, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		erccp.Response.Response, err = future.GetResult(sender)
+		if erccp.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && erccp.Response.Response.StatusCode != http.StatusNoContent {
+			erccp, err = client.CreateOrUpdateResponder(erccp.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture", "Result", erccp.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -130,7 +156,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdateSender(req
 func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdateResponder(resp *http.Response) (result ExpressRouteCrossConnectionPeering, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -162,7 +187,7 @@ func (client ExpressRouteCrossConnectionPeeringsClient) Delete(ctx context.Conte
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -194,13 +219,28 @@ func (client ExpressRouteCrossConnectionPeeringsClient) DeletePreparer(ctx conte
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionPeeringsClient) DeleteSender(req *http.Request) (future ExpressRouteCrossConnectionPeeringsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ExpressRouteCrossConnectionPeeringsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.ExpressRouteCrossConnectionPeeringsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -209,7 +249,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) DeleteSender(req *http.R
 func (client ExpressRouteCrossConnectionPeeringsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -248,6 +287,7 @@ func (client ExpressRouteCrossConnectionPeeringsClient) Get(ctx context.Context,
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -278,8 +318,7 @@ func (client ExpressRouteCrossConnectionPeeringsClient) GetPreparer(ctx context.
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionPeeringsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -287,7 +326,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) GetSender(req *http.Requ
 func (client ExpressRouteCrossConnectionPeeringsClient) GetResponder(resp *http.Response) (result ExpressRouteCrossConnectionPeering, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -327,6 +365,11 @@ func (client ExpressRouteCrossConnectionPeeringsClient) List(ctx context.Context
 	result.erccpl, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.erccpl.hasNextLink() && result.erccpl.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -356,8 +399,7 @@ func (client ExpressRouteCrossConnectionPeeringsClient) ListPreparer(ctx context
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionPeeringsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -365,7 +407,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) ListSender(req *http.Req
 func (client ExpressRouteCrossConnectionPeeringsClient) ListResponder(resp *http.Response) (result ExpressRouteCrossConnectionPeeringList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

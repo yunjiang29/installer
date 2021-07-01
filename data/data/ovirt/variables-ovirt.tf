@@ -6,27 +6,48 @@ variable "bootstrap_dns" {
 
 variable "ovirt_url" {
   type        = string
-  description = "The oVirt engine URL"
+  description = "The Engine URL"
 }
 
 variable "ovirt_username" {
   type        = string
-  description = "The name of user to access oVirt engine API"
+  description = "The name of user to access Engine API"
 }
 
 variable "ovirt_password" {
   type        = string
-  description = "The plain password of user to access oVirt engine API"
+  description = "The plain password of user to access Engine API"
+}
+
+variable "ovirt_cafile" {
+  type        = string
+  description = "Path to a file containing the CA certificate for the oVirt engine API in PEM format"
+}
+
+variable "ovirt_ca_bundle" {
+  type        = string
+  description = "The CA certificate for the oVirt engine API in PEM format"
+}
+
+variable "ovirt_insecure" {
+  type        = bool
+  description = "Disable oVirt engine certificate verification"
+}
+
+variable "ovirt_tmp_template_vm_id" {
+  type        = string
+  default     = ""
+  description = "The ID of tmp VM which was created for creating the templated"
 }
 
 variable "ovirt_cluster_id" {
   type        = string
-  description = "The ID of oVirt's cluster"
+  description = "The ID of Cluster"
 }
 
 variable "ovirt_storage_domain_id" {
   type        = string
-  description = "The ID of oVirt's stoage domain for the template"
+  description = "The ID of Storage Domain for the template"
 }
 
 variable "openstack_base_image_name" {
@@ -43,12 +64,18 @@ variable "openstack_base_image_local_file_path" {
 variable "ovirt_network_name" {
   type        = string
   default     = "ovirtmgmt"
-  description = "The name of ovirt's logical network for the selected ovirt cluster."
+  description = "The name of Logical Network for the selected Engine cluster."
 }
 
 variable "ovirt_vnic_profile_id" {
   type        = string
-  description = "The ID of the vnic profile of ovirt's logical network."
+  description = "The ID of the vNIC profile of Logical Network."
+}
+
+variable "ovirt_affinity_groups" {
+  type        = list(object({ name = string, priority = number, description = string, enforcing = string }))
+  description = "Affinity groups that will be created"
+  default     = []
 }
 
 variable "ovirt_master_memory" {
@@ -79,4 +106,9 @@ variable "ovirt_master_vm_type" {
 variable "ovirt_master_instance_type_id" {
   type        = string
   description = "master VM instance type ID"
+}
+
+variable "ovirt_master_affinity_groups" {
+  type        = list(string)
+  description = "master VMs affinity groups names"
 }

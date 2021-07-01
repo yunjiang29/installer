@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/AlecAivazis/survey.v1"
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/core"
+	"github.com/pkg/errors"
 
 	"github.com/openshift/installer/pkg/types/gcp"
 	"github.com/openshift/installer/pkg/types/gcp/validation"
-	"github.com/pkg/errors"
 )
 
 // Platform collects GCP-specific configuration.
@@ -24,6 +25,9 @@ func Platform() (*gcp.Platform, error) {
 	}
 
 	region, err := selectRegion(project)
+	if err != nil {
+		return nil, err
+	}
 
 	return &gcp.Platform{
 		ProjectID: project,
@@ -75,7 +79,7 @@ func selectProject(ctx context.Context) (string, error) {
 	}, &selectedProject)
 
 	selectedProject = ids[selectedProject]
-	return selectedProject, nil
+	return selectedProject, err
 }
 
 func selectRegion(project string) (string, error) {
@@ -85,9 +89,15 @@ func selectRegion(project string) (string, error) {
 		longRegions = append(longRegions, fmt.Sprintf("%s (%s)", id, location))
 		shortRegions = append(shortRegions, id)
 	}
-	regionTransform := survey.TransformString(func(s string) string {
-		return strings.SplitN(s, " ", 2)[0]
-	})
+	var regionTransform survey.Transformer = func(ans interface{}) interface{} {
+		switch v := ans.(type) {
+		case core.OptionAnswer:
+			return core.OptionAnswer{Value: strings.SplitN(v.Value, " ", 2)[0], Index: v.Index}
+		case string:
+			return strings.SplitN(v, " ", 2)[0]
+		}
+		return ""
+	}
 
 	sort.Strings(longRegions)
 	sort.Strings(shortRegions)
@@ -103,7 +113,7 @@ func selectRegion(project string) (string, error) {
 				Options: longRegions,
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				choice := regionTransform(ans).(string)
+				choice := regionTransform(ans).(core.OptionAnswer).Value
 				i := sort.SearchStrings(shortRegions, choice)
 				if i == len(shortRegions) || shortRegions[i] != choice {
 					return errors.Errorf("invalid region %q", choice)

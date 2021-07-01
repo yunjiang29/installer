@@ -1,10 +1,13 @@
 package ovirt
 
 import (
+	"crypto/x509"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	ovirtsdk "github.com/ovirt/go-ovirt"
+	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
 
@@ -14,11 +17,21 @@ var defaultOvirtConfigPath = filepath.Join(os.Getenv("HOME"), ".ovirt", "ovirt-c
 // Config holds oVirt api access details
 type Config struct {
 	URL      string `yaml:"ovirt_url"`
+	FQDN     string `yaml:"ovirt_fqdn"`
+	PemURL   string `yaml:"ovirt_pem_url"`
 	Username string `yaml:"ovirt_username"`
 	Password string `yaml:"ovirt_password"`
 	CAFile   string `yaml:"ovirt_cafile,omitempty"`
 	Insecure bool   `yaml:"ovirt_insecure,omitempty"`
 	CABundle string `yaml:"ovirt_ca_bundle,omitempty"`
+}
+
+// clientHTTP struct - Hold info about http calls
+type clientHTTP struct {
+	saveFilePath string // Path for saving file (GET method)
+	urlAddr      string // URL or Address
+	skipVerify   bool   // skipt cert validatin in the http call
+	certPool     *x509.CertPool
 }
 
 // LoadOvirtConfig from the following location (first wins):
@@ -73,4 +86,18 @@ func (c *Config) Save() error {
 		return err
 	}
 	return ioutil.WriteFile(path, out, 0600)
+}
+
+// getValidatedConnection will create a connection and validate it before returning.
+func (c *Config) getValidatedConnection() (*ovirtsdk.Connection, error) {
+	connection, err := getConnection(*c)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build configuration for ovirt connection validation")
+	}
+
+	if err := connection.Test(); err != nil {
+		_ = connection.Close()
+		return nil, err
+	}
+	return connection, nil
 }

@@ -12,11 +12,15 @@ import (
 	baremetalprovider "github.com/metal3-io/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
 	gcpapi "github.com/openshift/cluster-api-provider-gcp/pkg/apis"
 	gcpprovider "github.com/openshift/cluster-api-provider-gcp/pkg/apis/gcpprovider/v1beta1"
+	kubevirtproviderapi "github.com/openshift/cluster-api-provider-kubevirt/pkg/apis"
+	kubevirtprovider "github.com/openshift/cluster-api-provider-kubevirt/pkg/apis/kubevirtprovider/v1alpha1"
 	libvirtapi "github.com/openshift/cluster-api-provider-libvirt/pkg/apis"
 	libvirtprovider "github.com/openshift/cluster-api-provider-libvirt/pkg/apis/libvirtproviderconfig/v1beta1"
 	ovirtproviderapi "github.com/openshift/cluster-api-provider-ovirt/pkg/apis"
 	ovirtprovider "github.com/openshift/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
-	machineapi "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	machineapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	vsphereproviderapi "github.com/openshift/machine-api-operator/pkg/apis/vsphereprovider"
+	vsphereprovider "github.com/openshift/machine-api-operator/pkg/apis/vsphereprovider/v1beta1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -36,6 +40,7 @@ import (
 	"github.com/openshift/installer/pkg/asset/machines/azure"
 	"github.com/openshift/installer/pkg/asset/machines/baremetal"
 	"github.com/openshift/installer/pkg/asset/machines/gcp"
+	"github.com/openshift/installer/pkg/asset/machines/kubevirt"
 	"github.com/openshift/installer/pkg/asset/machines/libvirt"
 	"github.com/openshift/installer/pkg/asset/machines/machineconfig"
 	"github.com/openshift/installer/pkg/asset/machines/openstack"
@@ -50,6 +55,7 @@ import (
 	azuredefaults "github.com/openshift/installer/pkg/types/azure/defaults"
 	baremetaltypes "github.com/openshift/installer/pkg/types/baremetal"
 	gcptypes "github.com/openshift/installer/pkg/types/gcp"
+	kubevirttypes "github.com/openshift/installer/pkg/types/kubevirt"
 	libvirttypes "github.com/openshift/installer/pkg/types/libvirt"
 	nonetypes "github.com/openshift/installer/pkg/types/none"
 	openstacktypes "github.com/openshift/installer/pkg/types/openstack"
@@ -88,7 +94,7 @@ func defaultAzureMachinePoolPlatform() azuretypes.MachinePool {
 	return azuretypes.MachinePool{
 		OSDisk: azuretypes.OSDisk{
 			DiskSizeGB: 128,
-			DiskType:   "Premium_LRS",
+			DiskType:   azuretypes.DefaultDiskType,
 		},
 	}
 }
@@ -103,9 +109,9 @@ func defaultGCPMachinePoolPlatform() gcptypes.MachinePool {
 	}
 }
 
-func defaultOpenStackMachinePoolPlatform(flavor string) openstacktypes.MachinePool {
+func defaultOpenStackMachinePoolPlatform() openstacktypes.MachinePool {
 	return openstacktypes.MachinePool{
-		FlavorName: flavor,
+		Zones: []string{""},
 	}
 }
 
@@ -130,7 +136,7 @@ func defaultOvirtMachinePoolPlatform() ovirttypes.MachinePool {
 func defaultVSphereMachinePoolPlatform() vspheretypes.MachinePool {
 	return vspheretypes.MachinePool{
 		NumCPUs:           2,
-		NumCoresPerSocket: 1,
+		NumCoresPerSocket: 2,
 		MemoryMiB:         8192,
 		OSDisk: vspheretypes.OSDisk{
 			DiskSizeGB: 120,
@@ -138,8 +144,16 @@ func defaultVSphereMachinePoolPlatform() vspheretypes.MachinePool {
 	}
 }
 
-func awsDefaultWorkerMachineTypes(region string) []string {
-	classes := awsdefaults.InstanceClasses(region)
+func defaultKubevirtMachinePoolPlatform() kubevirttypes.MachinePool {
+	return kubevirttypes.MachinePool{
+		CPU:         4,
+		Memory:      "16G",
+		StorageSize: "120Gi",
+	}
+}
+
+func awsDefaultWorkerMachineTypes(region string, arch types.Architecture) []string {
+	classes := awsdefaults.InstanceClasses(region, arch)
 	types := make([]string, len(classes))
 	for i, c := range classes {
 		types[i] = fmt.Sprintf("%s.large", c)
@@ -189,13 +203,25 @@ func (w *Worker) Generate(dependencies asset.Parents) error {
 	ic := installConfig.Config
 	for _, pool := range ic.Compute {
 		if pool.Hyperthreading == types.HyperthreadingDisabled {
-			machineConfigs = append(machineConfigs, machineconfig.ForHyperthreadingDisabled("worker"))
+			ignHT, err := machineconfig.ForHyperthreadingDisabled("worker")
+			if err != nil {
+				return errors.Wrap(err, "failed to create ignition for hyperthreading disabled for worker machines")
+			}
+			machineConfigs = append(machineConfigs, ignHT)
 		}
 		if ic.SSHKey != "" {
-			machineConfigs = append(machineConfigs, machineconfig.ForAuthorizedKeys(ic.SSHKey, "worker"))
+			ignSSH, err := machineconfig.ForAuthorizedKeys(ic.SSHKey, "worker")
+			if err != nil {
+				return errors.Wrap(err, "failed to create ignition for authorized SSH keys for worker machines")
+			}
+			machineConfigs = append(machineConfigs, ignSSH)
 		}
 		if ic.FIPS {
-			machineConfigs = append(machineConfigs, machineconfig.ForFIPSEnabled("worker"))
+			ignFIPS, err := machineconfig.ForFIPSEnabled("worker")
+			if err != nil {
+				return errors.Wrap(err, "failed to create ignition for FIPS enabled for worker machines")
+			}
+			machineConfigs = append(machineConfigs, ignFIPS)
 		}
 		switch ic.Platform.Name() {
 		case awstypes.Name:
@@ -221,6 +247,7 @@ func (w *Worker) Generate(dependencies asset.Parents) error {
 
 			mpool.Set(ic.Platform.AWS.DefaultMachinePlatform)
 			mpool.Set(pool.Platform.AWS)
+			zoneDefaults := false
 			if len(mpool.Zones) == 0 {
 				if len(subnets) > 0 {
 					for zone := range subnets {
@@ -231,15 +258,24 @@ func (w *Worker) Generate(dependencies asset.Parents) error {
 					if err != nil {
 						return err
 					}
+					zoneDefaults = true
 				}
 			}
 			if mpool.InstanceType == "" {
-				mpool.InstanceType, err = aws.PreferredInstanceType(ctx, installConfig.AWS, awsDefaultWorkerMachineTypes(installConfig.Config.Platform.AWS.Region), mpool.Zones)
+				mpool.InstanceType, err = aws.PreferredInstanceType(ctx, installConfig.AWS, awsDefaultWorkerMachineTypes(installConfig.Config.Platform.AWS.Region, installConfig.Config.ControlPlane.Architecture), mpool.Zones)
 				if err != nil {
 					logrus.Warn(errors.Wrap(err, "failed to find default instance type"))
-					mpool.InstanceType = awsDefaultWorkerMachineTypes(installConfig.Config.Platform.AWS.Region)[0]
+					mpool.InstanceType = awsDefaultWorkerMachineTypes(installConfig.Config.Platform.AWS.Region, installConfig.Config.ControlPlane.Architecture)[0]
 				}
 			}
+			// if the list of zones is the default we need to try to filter the list in case there are some zones where the instance might not be available
+			if zoneDefaults {
+				mpool.Zones, err = aws.FilterZonesBasedOnInstanceType(ctx, installConfig.AWS, mpool.InstanceType, mpool.Zones)
+				if err != nil {
+					logrus.Warn(errors.Wrap(err, "failed to filter zone list"))
+				}
+			}
+
 			pool.Platform.AWS = &mpool
 			sets, err := aws.MachineSets(
 				clusterID.InfraID,
@@ -258,11 +294,18 @@ func (w *Worker) Generate(dependencies asset.Parents) error {
 			}
 		case azuretypes.Name:
 			mpool := defaultAzureMachinePoolPlatform()
-			mpool.InstanceType = azuredefaults.ComputeInstanceType(installConfig.Config.Platform.Azure.Region)
+			mpool.InstanceType = azuredefaults.ComputeInstanceType(
+				installConfig.Config.Platform.Azure.CloudName,
+				installConfig.Config.Platform.Azure.Region,
+			)
 			mpool.Set(ic.Platform.Azure.DefaultMachinePlatform)
 			mpool.Set(pool.Platform.Azure)
 			if len(mpool.Zones) == 0 {
-				azs, err := azure.AvailabilityZones(ic.Platform.Azure.Region, mpool.InstanceType)
+				session, err := installConfig.Azure.Session()
+				if err != nil {
+					return errors.Wrap(err, "failed to fetch session for availability zones")
+				}
+				azs, err := azure.AvailabilityZones(session, ic.Platform.Azure.Region, mpool.InstanceType)
 				if err != nil {
 					return errors.Wrap(err, "failed to fetch availability zones")
 				}
@@ -326,14 +369,14 @@ func (w *Worker) Generate(dependencies asset.Parents) error {
 				machineSets = append(machineSets, set)
 			}
 		case openstacktypes.Name:
-			mpool := defaultOpenStackMachinePoolPlatform(ic.Platform.OpenStack.FlavorName)
+			mpool := defaultOpenStackMachinePoolPlatform()
 			mpool.Set(ic.Platform.OpenStack.DefaultMachinePlatform)
 			mpool.Set(pool.Platform.OpenStack)
 			pool.Platform.OpenStack = &mpool
 
 			imageName, _ := rhcosutils.GenerateOpenStackImageName(string(*rhcosImage), clusterID.InfraID)
 
-			sets, err := openstack.MachineSets(clusterID.InfraID, ic, &pool, imageName, "worker", "worker-user-data")
+			sets, err := openstack.MachineSets(clusterID.InfraID, ic, &pool, imageName, "worker", "worker-user-data", nil)
 			if err != nil {
 				return errors.Wrap(err, "failed to create worker machine objects")
 			}
@@ -365,6 +408,21 @@ func (w *Worker) Generate(dependencies asset.Parents) error {
 			sets, err := ovirt.MachineSets(clusterID.InfraID, ic, &pool, imageName, "worker", "worker-user-data")
 			if err != nil {
 				return errors.Wrap(err, "failed to create worker machine objects for ovirt provider")
+			}
+			for _, set := range sets {
+				machineSets = append(machineSets, set)
+			}
+		case kubevirttypes.Name:
+			mpool := defaultKubevirtMachinePoolPlatform()
+			mpool.Set(ic.Platform.Kubevirt.DefaultMachinePlatform)
+			mpool.Set(pool.Platform.Kubevirt)
+			pool.Platform.Kubevirt = &mpool
+
+			imageName, _ := rhcosutils.GenerateOpenStackImageName(string(*rhcosImage), clusterID.InfraID)
+
+			sets, err := kubevirt.MachineSets(clusterID.InfraID, ic, &pool, imageName, "worker", "worker-user-data")
+			if err != nil {
+				return errors.Wrap(err, "failed to create worker machine objects for kubevirt provider")
 			}
 			for _, set := range sets {
 				machineSets = append(machineSets, set)
@@ -452,6 +510,8 @@ func (w *Worker) MachineSets() ([]machineapi.MachineSet, error) {
 	libvirtapi.AddToScheme(scheme)
 	openstackapi.AddToScheme(scheme)
 	ovirtproviderapi.AddToScheme(scheme)
+	vsphereproviderapi.AddToScheme(scheme)
+	kubevirtproviderapi.AddToScheme(scheme)
 	decoder := serializer.NewCodecFactory(scheme).UniversalDecoder(
 		awsprovider.SchemeGroupVersion,
 		azureprovider.SchemeGroupVersion,
@@ -460,6 +520,8 @@ func (w *Worker) MachineSets() ([]machineapi.MachineSet, error) {
 		libvirtprovider.SchemeGroupVersion,
 		openstackprovider.SchemeGroupVersion,
 		ovirtprovider.SchemeGroupVersion,
+		vsphereprovider.SchemeGroupVersion,
+		kubevirtprovider.SchemeGroupVersion,
 	)
 
 	machineSets := []machineapi.MachineSet{}

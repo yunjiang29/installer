@@ -23,8 +23,14 @@ variable "external_network_id" {
   default     = ""
 }
 
-variable "lb_floating_ip" {
-  description = "(optional) Existing floating IP address to attach to the load balancer created by the installer."
+variable "api_floating_ip" {
+  description = "(optional) Existing floating IP address to attach to the OpenShift API created by the installer."
+  type        = string
+  default     = ""
+}
+
+variable "ingress_floating_ip" {
+  description = "(optional) Existing floating IP address to attach to the ingress port created by the installer."
   type        = string
   default     = ""
 }
@@ -37,10 +43,6 @@ variable "api_int_ip" {
   type = string
 }
 
-variable "node_dns_ip" {
-  type = string
-}
-
 variable "ingress_ip" {
   type = string
 }
@@ -50,11 +52,11 @@ variable "external_dns" {
 }
 
 variable "trunk_support" {
-  type = string
+  type = bool
 }
 
 variable "octavia_support" {
-  type = string
+  type = bool
 }
 
 variable "machines_subnet_id" {
@@ -65,4 +67,9 @@ variable "machines_subnet_id" {
 variable "machines_network_id" {
   type    = string
   default = ""
+}
+
+variable "master_extra_sg_ids" {
+  description = "(optional) IDs of additional security groups for masters."
+  type        = list(string)
 }

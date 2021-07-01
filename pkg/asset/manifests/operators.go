@@ -4,7 +4,6 @@ package manifests
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -63,31 +62,15 @@ func (m *Manifests) Dependencies() []asset.Asset {
 		&Scheduler{},
 		&ImageContentSourcePolicy{},
 		&tls.RootCA{},
-		&tls.EtcdSignerCertKey{},
-		&tls.EtcdCABundle{},
-		&tls.EtcdSignerClientCertKey{},
-		&tls.EtcdMetricCABundle{},
-		&tls.EtcdMetricSignerCertKey{},
-		&tls.EtcdMetricSignerClientCertKey{},
 		&tls.MCSCertKey{},
 
 		&bootkube.CVOOverrides{},
-		&bootkube.EtcdCAConfigMap{},
-		&bootkube.EtcdClientSecret{},
-		&bootkube.EtcdHostServiceEndpoints{},
-		&bootkube.EtcdHostService{},
-		&bootkube.EtcdMetricClientSecret{},
-		&bootkube.EtcdMetricServingCAConfigMap{},
-		&bootkube.EtcdMetricSignerSecret{},
-		&bootkube.EtcdNamespace{},
-		&bootkube.EtcdService{},
-		&bootkube.EtcdSignerSecret{},
 		&bootkube.KubeCloudConfig{},
-		&bootkube.EtcdServingCAConfigMap{},
 		&bootkube.KubeSystemConfigmapRootCA{},
 		&bootkube.MachineConfigServerTLSSecret{},
 		&bootkube.OpenshiftConfigSecretPullSecret{},
 		&bootkube.OpenshiftMachineConfigOperator{},
+		&bootkube.KubevirtInfraNamespace{},
 	}
 }
 
@@ -146,71 +129,31 @@ func (m *Manifests) generateBootKubeManifests(dependencies asset.Parents) []*ass
 	clusterID := &installconfig.ClusterID{}
 	installConfig := &installconfig.InstallConfig{}
 	mcsCertKey := &tls.MCSCertKey{}
-	etcdMetricCABundle := &tls.EtcdMetricCABundle{}
-	etcdMetricSignerClientCertKey := &tls.EtcdMetricSignerClientCertKey{}
-	etcdMetricSignerCertKey := &tls.EtcdMetricSignerCertKey{}
 	rootCA := &tls.RootCA{}
-	etcdSignerCertKey := &tls.EtcdSignerCertKey{}
-	etcdCABundle := &tls.EtcdCABundle{}
-	etcdSignerClientCertKey := &tls.EtcdSignerClientCertKey{}
 	dependencies.Get(
 		clusterID,
 		installConfig,
-		etcdSignerCertKey,
-		etcdCABundle,
-		etcdSignerClientCertKey,
-		etcdMetricCABundle,
-		etcdMetricSignerClientCertKey,
-		etcdMetricSignerCertKey,
 		mcsCertKey,
 		rootCA,
 	)
 
-	etcdEndpointHostnames := make([]string, *installConfig.Config.ControlPlane.Replicas+1)
-	for i := range etcdEndpointHostnames {
-		etcdEndpointHostnames[i] = fmt.Sprintf("etcd-%d", i-1)
-	}
-	etcdEndpointHostnames[0] = "etcd-bootstrap"
-
 	templateData := &bootkubeTemplateData{
-		CVOClusterID:               clusterID.UUID,
-		EtcdCaBundle:               string(etcdCABundle.Cert()),
-		EtcdEndpointDNSSuffix:      installConfig.Config.ClusterDomain(),
-		EtcdEndpointHostnames:      etcdEndpointHostnames,
-		EtcdMetricCaCert:           string(etcdMetricCABundle.Cert()),
-		EtcdMetricSignerCert:       base64.StdEncoding.EncodeToString(etcdMetricSignerCertKey.Cert()),
-		EtcdMetricSignerClientCert: base64.StdEncoding.EncodeToString(etcdMetricSignerClientCertKey.Cert()),
-		EtcdMetricSignerClientKey:  base64.StdEncoding.EncodeToString(etcdMetricSignerClientCertKey.Key()),
-		EtcdMetricSignerKey:        base64.StdEncoding.EncodeToString(etcdMetricSignerCertKey.Key()),
-		EtcdSignerCert:             base64.StdEncoding.EncodeToString(etcdSignerCertKey.Cert()),
-		EtcdSignerClientCert:       base64.StdEncoding.EncodeToString(etcdSignerClientCertKey.Cert()),
-		EtcdSignerClientKey:        base64.StdEncoding.EncodeToString(etcdSignerClientCertKey.Key()),
-		EtcdSignerKey:              base64.StdEncoding.EncodeToString(etcdSignerCertKey.Key()),
-		McsTLSCert:                 base64.StdEncoding.EncodeToString(mcsCertKey.Cert()),
-		McsTLSKey:                  base64.StdEncoding.EncodeToString(mcsCertKey.Key()),
-		PullSecretBase64:           base64.StdEncoding.EncodeToString([]byte(installConfig.Config.PullSecret)),
-		RootCaCert:                 string(rootCA.Cert()),
+		CVOClusterID:     clusterID.UUID,
+		McsTLSCert:       base64.StdEncoding.EncodeToString(mcsCertKey.Cert()),
+		McsTLSKey:        base64.StdEncoding.EncodeToString(mcsCertKey.Key()),
+		PullSecretBase64: base64.StdEncoding.EncodeToString([]byte(installConfig.Config.PullSecret)),
+		RootCaCert:       string(rootCA.Cert()),
 	}
 
 	files := []*asset.File{}
 	for _, a := range []asset.WritableAsset{
 		&bootkube.CVOOverrides{},
-		&bootkube.EtcdCAConfigMap{},
-		&bootkube.EtcdClientSecret{},
-		&bootkube.EtcdHostServiceEndpoints{},
-		&bootkube.EtcdHostService{},
-		&bootkube.EtcdMetricClientSecret{},
-		&bootkube.EtcdMetricSignerSecret{},
-		&bootkube.EtcdMetricServingCAConfigMap{},
-		&bootkube.EtcdNamespace{},
-		&bootkube.EtcdService{},
-		&bootkube.EtcdServingCAConfigMap{},
-		&bootkube.EtcdSignerSecret{},
 		&bootkube.KubeCloudConfig{},
 		&bootkube.KubeSystemConfigmapRootCA{},
 		&bootkube.MachineConfigServerTLSSecret{},
 		&bootkube.OpenshiftConfigSecretPullSecret{},
 		&bootkube.OpenshiftMachineConfigOperator{},
+		&bootkube.KubevirtInfraNamespace{},
 	} {
 		dependencies.Get(a)
 		for _, f := range a.Files() {
@@ -234,10 +177,21 @@ func applyTemplateData(data []byte, templateData interface{}) []byte {
 
 // Load returns the manifests asset from disk.
 func (m *Manifests) Load(f asset.FileFetcher) (bool, error) {
-	fileList, err := f.FetchByPattern(filepath.Join(manifestDir, "*"))
+	yamlFileList, err := f.FetchByPattern(filepath.Join(manifestDir, "*.yaml"))
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "failed to load *.yaml files")
 	}
+	ymlFileList, err := f.FetchByPattern(filepath.Join(manifestDir, "*.yml"))
+	if err != nil {
+		return false, errors.Wrap(err, "failed to load *.yml files")
+	}
+	jsonFileList, err := f.FetchByPattern(filepath.Join(manifestDir, "*.json"))
+	if err != nil {
+		return false, errors.Wrap(err, "failed to load *.json files")
+	}
+	fileList := append(yamlFileList, ymlFileList...)
+	fileList = append(fileList, jsonFileList...)
+
 	if len(fileList) == 0 {
 		return false, nil
 	}

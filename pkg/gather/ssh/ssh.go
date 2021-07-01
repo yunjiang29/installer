@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/openshift/installer/pkg/lineprinter"
 	"github.com/pkg/errors"
@@ -20,7 +21,7 @@ import (
 //
 // if keys list is empty, it tries to load the keys from the user's environment.
 func NewClient(user, address string, keys []string) (*ssh.Client, error) {
-	ag, err := getAgent(keys)
+	ag, agentType, err := getAgent(keys)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize the SSH agent")
 	}
@@ -36,6 +37,12 @@ func NewClient(user, address string, keys []string) (*ssh.Client, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "ssh: handshake failed: ssh: unable to authenticate") {
+			if agentType == "agent" {
+				return nil, errors.Wrap(err, "failed to use pre-existing agent, make sure the appropriate keys exist in the agent for authentication")
+			}
+			return nil, errors.Wrap(err, "failed to use the provided keys for authentication")
+		}
 		return nil, err
 	}
 	if err := agent.ForwardToAgent(client, ag); err != nil {
@@ -106,7 +113,7 @@ func defaultPrivateSSHKeys() (map[string]interface{}, error) {
 		files = append(files, filepath.Join(d, path.Name()))
 	}
 	keys, err := LoadPrivateSSHKeys(files)
-	if keys != nil && len(keys) > 0 {
+	if len(keys) > 0 {
 		return keys, nil
 	}
 	return nil, err
@@ -124,6 +131,7 @@ func LoadPrivateSSHKeys(paths []string) (map[string]interface{}, error) {
 		}
 		key, err := ssh.ParseRawPrivateKey(data)
 		if err != nil {
+			logrus.Debugf("failed to parse SSH private key from %q", path)
 			errs = append(errs, errors.Wrapf(err, "failed to parse SSH private key from %q", path))
 			continue
 		}

@@ -5,14 +5,16 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"strings"
+
 	"github.com/gophercloud/gophercloud/openstack/baremetal/v1/nodes"
 	utils "github.com/gophercloud/utils/openstack/baremetal/v1/nodes"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"io/ioutil"
-	"log"
-	"net/http"
 )
 
 // Schema resource definition for an Ironic deployment.
@@ -53,6 +55,11 @@ func resourceDeployment() *schema.Resource {
 				Optional: true,
 				ForceNew: true,
 			},
+			"user_data_url_headers": {
+				Type:     schema.TypeMap,
+				Optional: true,
+				ForceNew: true,
+			},
 			"network_data": {
 				Type:     schema.TypeMap,
 				Optional: true,
@@ -83,12 +90,26 @@ func resourceDeploymentCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Reload the resource before returning
-	defer resourceDeploymentRead(d, meta)
+	defer func() { _ = resourceDeploymentRead(d, meta) }()
 
 	// Set instance info
 	instanceInfo := d.Get("instance_info").(map[string]interface{})
 	if instanceInfo != nil {
-		_, err := UpdateNode(client, d.Get("node_uuid").(string), nodes.UpdateOpts{
+		instanceInfoCapabilities, found := instanceInfo["capabilities"]
+		capabilities := make(map[string]string)
+		nodeUUID := d.Get("node_uuid").(string)
+		if found {
+			for _, e := range strings.Split(instanceInfoCapabilities.(string), ",") {
+				parts := strings.Split(e, ":")
+				if len(parts) != 2 {
+					return fmt.Errorf("error while parsing capabilities: %s, the correct format is key:value", e)
+				}
+				capabilities[parts[0]] = parts[1]
+
+			}
+			delete(instanceInfo, "capabilities")
+		}
+		_, err := UpdateNode(client, nodeUUID, nodes.UpdateOpts{
 			nodes.UpdateOperation{
 				Op:    nodes.AddOp,
 				Path:  "/instance_info",
@@ -98,6 +119,19 @@ func resourceDeploymentCreate(d *schema.ResourceData, meta interface{}) error {
 		if err != nil {
 			return fmt.Errorf("could not update instance info: %s", err)
 		}
+
+		if len(capabilities) != 0 {
+			_, err = UpdateNode(client, nodeUUID, nodes.UpdateOpts{
+				nodes.UpdateOperation{
+					Op:    nodes.AddOp,
+					Path:  "/instance_info/capabilities",
+					Value: capabilities,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("could not update instance info capabilities: %s", err)
+			}
+		}
 	}
 
 	d.SetId(d.Get("node_uuid").(string))
@@ -105,9 +139,13 @@ func resourceDeploymentCreate(d *schema.ResourceData, meta interface{}) error {
 	userData := d.Get("user_data").(string)
 	userDataURL := d.Get("user_data_url").(string)
 	userDataCaCert := d.Get("user_data_url_ca_cert").(string)
+	userDataHeaders := d.Get("user_data_url_headers").(map[string]interface{})
 
 	// if user_data_url is specified in addition to user_data, use the former
-	ignitionData := fetchFullIgnition(userDataURL, userDataCaCert)
+	ignitionData, err := fetchFullIgnition(userDataURL, userDataCaCert, userDataHeaders)
+	if err != nil {
+		return fmt.Errorf("could not fetch data from user_data_url: %s", err)
+	}
 	if ignitionData != "" {
 		userData = ignitionData
 	}
@@ -125,7 +163,7 @@ func resourceDeploymentCreate(d *schema.ResourceData, meta interface{}) error {
 }
 
 // fetchFullIgnition gets full igntion from the URL and cert passed to it and returns userdata as a string
-func fetchFullIgnition(userDataURL string, userDataCaCert string) string {
+func fetchFullIgnition(userDataURL string, userDataCaCert string, userDataHeaders map[string]interface{}) (string, error) {
 	// Send full ignition, if the URL is specified
 	if userDataURL != "" {
 		caCertPool := x509.NewCertPool()
@@ -135,7 +173,7 @@ func fetchFullIgnition(userDataURL string, userDataCaCert string) string {
 			caCert, err := base64.StdEncoding.DecodeString(userDataCaCert)
 			if err != nil {
 				log.Printf("could not decode user_data_url_ca_cert: %s", err)
-				return ""
+				return "", err
 			}
 			caCertPool.AppendCertsFromPEM(caCert)
 
@@ -149,28 +187,42 @@ func fetchFullIgnition(userDataURL string, userDataCaCert string) string {
 		client.HTTPClient.Transport = transport
 
 		// Get the data
-		resp, err := client.Get(userDataURL)
+		req, err := retryablehttp.NewRequest("GET", userDataURL, nil)
 		if err != nil {
 			log.Printf("could not get user_data_url: %s", err)
-			return ""
+			return "", err
+		}
+		for k, v := range userDataHeaders {
+			req.Header.Add(k, v.(string))
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("could not get user_data_url: %s", err)
+			return "", err
 		}
 		defer resp.Body.Close()
 		var userData []byte
 		userData, err = ioutil.ReadAll(resp.Body)
 		if err != nil {
 			log.Printf("could not read user_data_url: %s", err)
-			return ""
+			return "", err
 		}
-		return string(userData)
+		return string(userData), nil
 	}
-	return ""
+	return "", nil
 }
 
 // buildConfigDrive handles building a config drive appropriate for the Ironic version we are using.  Newer versions
 // support sending the user data directly, otherwise we need to build an ISO image
-func buildConfigDrive(apiVersion, userData string, networkData, metaData map[string]interface{}) (configDrive interface{}, err error) {
+func buildConfigDrive(apiVersion, userData string, networkData, metaData map[string]interface{}) (interface{}, error) {
 	actual, err := version.NewVersion(apiVersion)
+	if err != nil {
+		return nil, err
+	}
 	minimum, err := version.NewVersion("1.56")
+	if err != nil {
+		return nil, err
+	}
 
 	if minimum.GreaterThan(actual) {
 		// Create config drive ISO directly with gophercloud/utils
@@ -183,17 +235,14 @@ func buildConfigDrive(apiVersion, userData string, networkData, metaData map[str
 		if err != nil {
 			return nil, err
 		}
-		configDrive = &configDriveISO
-	} else {
-		// Let Ironic handle creating the config drive
-		configDrive = &nodes.ConfigDrive{
-			UserData:    userData,
-			NetworkData: networkData,
-			MetaData:    metaData,
-		}
+		return &configDriveISO, nil
 	}
-
-	return
+	// Let Ironic handle creating the config drive
+	return &nodes.ConfigDrive{
+		UserData:    userData,
+		NetworkData: networkData,
+		MetaData:    metaData,
+	}, nil
 }
 
 // Read the deployment's data from Ironic
@@ -210,10 +259,11 @@ func resourceDeploymentRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("could not find node %s: %s", id, err)
 	}
 
-	d.Set("provision_state", result.ProvisionState)
-	d.Set("last_error", result.LastError)
-
-	return nil
+	err = d.Set("provision_state", result.ProvisionState)
+	if err != nil {
+		return err
+	}
+	return d.Set("last_error", result.LastError)
 }
 
 // Delete an deployment from Ironic - this cleans the node and returns it's state to 'available'

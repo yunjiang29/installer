@@ -38,6 +38,9 @@ resource "ovirt_image_transfer" "releaseimage" {
   source_url        = var.openstack_base_image_local_file_path
   storage_domain_id = var.ovirt_storage_domain_id
   sparse            = true
+  timeouts {
+    create = "20m"
+  }
 }
 
 resource "ovirt_vm" "tmp_import_vm" {
@@ -45,6 +48,7 @@ resource "ovirt_vm" "tmp_import_vm" {
   count      = length(local.existing_id) == 0 ? 1 : 0
   name       = "tmpvm-for-${ovirt_image_transfer.releaseimage.0.alias}"
   cluster_id = var.ovirt_cluster_id
+  auto_start = false
   block_device {
     disk_id   = ovirt_image_transfer.releaseimage.0.disk_id
     interface = "virtio_scsi"
@@ -56,7 +60,19 @@ resource "ovirt_vm" "tmp_import_vm" {
     name            = "nic1"
     vnic_profile_id = var.ovirt_vnic_profile_id
   }
+  timeouts {
+    create = "20m"
+  }
   depends_on = [ovirt_image_transfer.releaseimage]
+}
+
+data "ovirt_vms" "tmp_import_vm_data" {
+  count = length(local.existing_id) == 0 ? 1 : 0
+  search = {
+    criteria       = "name=tmpvm-for-${ovirt_image_transfer.releaseimage.0.alias}"
+    case_sensitive = true
+  }
+  depends_on = [ovirt_vm.tmp_import_vm]
 }
 
 resource "ovirt_template" "releaseimage_template" {
@@ -64,10 +80,12 @@ resource "ovirt_template" "releaseimage_template" {
   count = length(local.existing_id) == 0 ? 1 : 0
   // name the template after the openshift cluster id
   name       = var.openstack_base_image_name
-  cluster_id = ovirt_vm.tmp_import_vm.0.cluster_id
+  cluster_id = data.ovirt_vms.tmp_import_vm_data.0.vms.0.cluster_id
   // create from vm
-  vm_id      = ovirt_vm.tmp_import_vm.0.id
-  depends_on = [ovirt_vm.tmp_import_vm]
+  vm_id = data.ovirt_vms.tmp_import_vm_data.0.vms.0.id
+  timeouts {
+    create = "20m"
+  }
 }
 
 // finally get the template by name(should be unique), fail if it doesn't exist

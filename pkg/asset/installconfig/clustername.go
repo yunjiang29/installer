@@ -1,7 +1,8 @@
 package installconfig
 
 import (
-	survey "gopkg.in/AlecAivazis/survey.v1"
+	survey "github.com/AlecAivazis/survey/v2"
+	"github.com/pkg/errors"
 
 	"github.com/openshift/installer/pkg/asset"
 	"github.com/openshift/installer/pkg/types"
@@ -34,6 +35,18 @@ func (a *clusterName) Generate(parents asset.Parents) error {
 		validator = survey.ComposeValidators(validator, func(ans interface{}) error {
 			return validate.ClusterName1035(ans.(string))
 		})
+		if platform.GCP != nil {
+			validator = survey.ComposeValidators(validator, func(ans interface{}) error {
+				return validate.GCPClusterName(ans.(string))
+			})
+		}
+	}
+
+	if platform.Ovirt != nil {
+		// FIX-ME: As soon bz#1915122 get resolved remove the limitation of 14 chars for the clustername
+		validator = survey.ComposeValidators(validator, func(ans interface{}) error {
+			return validate.ClusterNameMaxLength(ans.(string), 14)
+		})
 	}
 	validator = survey.ComposeValidators(validator, func(ans interface{}) error {
 		installConfig := &types.InstallConfig{BaseDomain: bd.BaseDomain}
@@ -41,7 +54,7 @@ func (a *clusterName) Generate(parents asset.Parents) error {
 		return validate.DomainName(installConfig.ClusterDomain(), false)
 	})
 
-	return survey.Ask([]*survey.Question{
+	if err := survey.Ask([]*survey.Question{
 		{
 			Prompt: &survey.Input{
 				Message: "Cluster Name",
@@ -49,7 +62,10 @@ func (a *clusterName) Generate(parents asset.Parents) error {
 			},
 			Validate: validator,
 		},
-	}, &a.ClusterName)
+	}, &a.ClusterName); err != nil {
+		return errors.Wrap(err, "failed UserInput")
+	}
+	return nil
 }
 
 // Name returns the human-friendly name of the asset.

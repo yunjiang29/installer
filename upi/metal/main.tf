@@ -1,3 +1,10 @@
+# ================IGNITION=====================
+
+# force local ignition provider binary
+provider "ignition" {
+  version = "0.0.0"
+}
+
 # ================MATCHBOX=====================
 
 locals {
@@ -7,11 +14,7 @@ locals {
     "rd.neednet=1",
 
     # "rd.break=initqueue"
-    "coreos.inst=yes",
-
-    "coreos.inst.image_url=${var.pxe_os_image_url}",
-    "coreos.inst.install_dev=sda",
-    "coreos.inst.skip_media_check",
+    "coreos.inst.install_dev=/dev/sda",
   ]
 
   pxe_kernel = var.pxe_kernel_url
@@ -45,6 +48,7 @@ resource "matchbox_profile" "master" {
   args = concat(
     local.kernel_args,
     ["coreos.inst.ignition_url=${var.matchbox_http_endpoint}/ignition?cluster_id=${var.cluster_id}&role=master"],
+    [var.pxe_kernel_args],
   )
 
   raw_ignition = file(var.master_ign_file)
@@ -61,6 +65,7 @@ resource "matchbox_profile" "worker" {
   args = concat(
     local.kernel_args,
     ["coreos.inst.ignition_url=${var.matchbox_http_endpoint}/ignition?cluster_id=${var.cluster_id}&role=worker"],
+    [var.pxe_kernel_args],
   )
 
   raw_ignition = file(var.worker_ign_file)
@@ -88,34 +93,34 @@ resource "matchbox_group" "worker" {
 
 # ================PACKET=====================
 
-provider "packet" {}
-
-locals {
-  packet_facility = "sjc1"
+provider "packet" {
+  version = "3.2.0"
 }
 
 resource "packet_device" "masters" {
-  count            = var.master_count
-  hostname         = "master-${count.index}.${var.cluster_domain}"
-  plan             = "c1.small.x86"
-  facilities       = ["any"]
-  operating_system = "custom_ipxe"
-  ipxe_script_url  = "${var.matchbox_http_endpoint}/ipxe?cluster_id=${var.cluster_id}&role=master"
-  billing_cycle    = "hourly"
-  project_id       = var.packet_project_id
+  count                   = var.master_count
+  hostname                = "master-${count.index}.${var.cluster_domain}"
+  plan                    = var.packet_plan
+  facilities              = [var.packet_facility]
+  operating_system        = "custom_ipxe"
+  ipxe_script_url         = "${var.matchbox_http_endpoint}/ipxe?cluster_id=${var.cluster_id}&role=master"
+  billing_cycle           = "hourly"
+  project_id              = var.packet_project_id
+  hardware_reservation_id = var.packet_hardware_reservation_id
 
   depends_on = [matchbox_group.master]
 }
 
 resource "packet_device" "workers" {
-  count            = var.worker_count
-  hostname         = "worker-${count.index}.${var.cluster_domain}"
-  plan             = "c1.small.x86"
-  facilities       = ["any"]
-  operating_system = "custom_ipxe"
-  ipxe_script_url  = "${var.matchbox_http_endpoint}/ipxe?cluster_id=${var.cluster_id}&role=worker"
-  billing_cycle    = "hourly"
-  project_id       = var.packet_project_id
+  count                   = var.worker_count
+  hostname                = "worker-${count.index}.${var.cluster_domain}"
+  plan                    = var.packet_plan
+  facilities              = [var.packet_facility]
+  operating_system        = "custom_ipxe"
+  ipxe_script_url         = "${var.matchbox_http_endpoint}/ipxe?cluster_id=${var.cluster_id}&role=worker"
+  billing_cycle           = "hourly"
+  project_id              = var.packet_project_id
+  hardware_reservation_id = var.packet_hardware_reservation_id
 
   depends_on = [matchbox_group.worker]
 }
@@ -125,16 +130,22 @@ resource "packet_device" "workers" {
 module "bootstrap" {
   source = "./bootstrap"
 
-  pxe_kernel             = local.pxe_kernel
-  pxe_initrd             = local.pxe_initrd
-  pxe_kernel_args        = local.kernel_args
+  pxe_kernel = local.pxe_kernel
+  pxe_initrd = local.pxe_initrd
+  pxe_kernel_args = concat(
+    local.kernel_args,
+    [var.pxe_kernel_args],
+  )
   matchbox_http_endpoint = var.matchbox_http_endpoint
   igntion_config_content = file(var.bootstrap_ign_file)
 
   cluster_id = var.cluster_id
 
-  packet_facility   = "any"
+  packet_facility   = var.packet_facility
   packet_project_id = var.packet_project_id
+  packet_plan       = var.packet_plan
+
+  packet_hardware_reservation_id = var.packet_hardware_reservation_id
 }
 
 # ================AWS=====================

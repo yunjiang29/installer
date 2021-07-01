@@ -3,20 +3,24 @@ provider "libvirt" {
 }
 
 provider "ironic" {
-  url          = "http://${var.bootstrap_provisioning_ip}:6385/v1"
-  inspector    = "http://${var.bootstrap_provisioning_ip}:5050/v1"
-  microversion = "1.56"
-  timeout      = 1500
+  url                = var.ironic_uri
+  inspector          = var.inspector_uri
+  microversion       = "1.56"
+  timeout            = 3600
+  auth_strategy      = "http_basic"
+  ironic_username    = var.ironic_username
+  ironic_password    = var.ironic_password
+  inspector_username = var.ironic_username
+  inspector_password = var.ironic_password
 }
 
 module "bootstrap" {
   source = "./bootstrap"
 
-  cluster_id          = var.cluster_id
-  image               = var.bootstrap_os_image
-  ignition            = var.ignition_bootstrap
-  external_bridge     = var.external_bridge
-  provisioning_bridge = var.provisioning_bridge
+  cluster_id = var.cluster_id
+  image      = var.bootstrap_os_image
+  ignition   = var.ignition_bootstrap
+  bridges    = var.bridges
 }
 
 module "masters" {

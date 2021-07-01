@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/installer/pkg/ipnet"
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/baremetal"
+	"github.com/openshift/installer/pkg/types/baremetal/defaults"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -23,32 +24,6 @@ using the fluent interface by chaining the exposed functions accordingly.
 */
 
 func TestValidatePlatform(t *testing.T) {
-	interfaceValidator := func(p *baremetal.Platform, fldPath *field.Path) field.ErrorList {
-		errorList := field.ErrorList{}
-
-		if p.ExternalBridge != "br0" {
-			errorList = append(errorList, field.Invalid(fldPath.Child("externalBridge"), p.ExternalBridge,
-				"invalid external bridge"))
-		}
-
-		if p.ProvisioningBridge != "br1" {
-			errorList = append(errorList, field.Invalid(fldPath.Child("provisioningBridge"), p.ProvisioningBridge,
-				"invalid provisioning bridge"))
-		}
-
-		return errorList
-	}
-	dynamicValidators = append(dynamicValidators, interfaceValidator)
-
-	//Used for url validations
-	imagesServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/gzip")
-		if strings.Contains(r.RequestURI, "notexistent") {
-			http.NotFound(w, r)
-		}
-	}))
-	defer imagesServer.Close()
-
 	cases := []struct {
 		name     string
 		config   *types.InstallConfig
@@ -67,45 +42,16 @@ func TestValidatePlatform(t *testing.T) {
 				BootstrapProvisioningIP("fd2e:6f44:5dd8:b856::2").build(),
 		},
 		{
-			name: "valid_with_os_image_overrides",
-			platform: platform().
-				BootstrapOSImage(imagesServer.URL + "/images/qemu.x86_64.qcow2.gz?sha256=3b5a882c2af3e19d515b961855d144f293cab30190c2bdedd661af31a1fc4e2f").
-				ClusterOSImage(imagesServer.URL + "/images/metal.x86_64.qcow2.gz?sha256=340dfa4d92450f2eee852ed1e2d02e3138cc68d824827ef9cf0a40a7ea2f93da").build(),
-		},
-		{
-			name: "valid_provisioningDHCPRange",
-			platform: platform().
-				ProvisioningDHCPRange("172.22.0.10,172.22.0.50").build(),
-		},
-		{
-			name: "invalid_provisioningDHCPRange_missing_pair",
-			platform: platform().
-				ProvisioningDHCPRange("172.22.0.10,").build(),
-			expected: "provisioningDHCPRange: Invalid value: \"172.22.0.10,\": : \"\" is not a valid IP",
-		},
-		{
-			name: "invalid_provisioningDHCPRange_not_a_range",
-			platform: platform().
-				ProvisioningDHCPRange("172.22.0.19").build(),
-			expected: "Invalid value: \"172.22.0.19\": provisioning dhcp range should be in format: start_ip,end_ip",
-		},
-		{
-			name: "invalid_provisioningDHCPRange_wrong_CIDR",
-			platform: platform().
-				ProvisioningDHCPRange("192.168.128.1,172.22.0.100").build(),
-			expected: "Invalid value: \"192.168.128.1,172.22.0.100\": \"192.168.128.1\" is not in the provisioning network",
-		},
-		{
 			name: "invalid_apivip",
 			platform: platform().
 				APIVIP("192.168.222.2").build(),
-			expected: "Invalid value: \"192.168.222.2\": the virtual IP is expected to be in one of the machine networks",
+			expected: "Invalid value: \"192.168.222.2\": IP expected to be in one of the machine networks: 192.168.111.0/24",
 		},
 		{
 			name: "invalid_ingressvip",
 			platform: platform().
 				IngressVIP("192.168.222.4").build(),
-			expected: "Invalid value: \"192.168.222.4\": the virtual IP is expected to be in one of the machine networks",
+			expected: "Invalid value: \"192.168.222.4\": IP expected to be in one of the machine networks: 192.168.111.0/24",
 		},
 		{
 			name: "invalid_hosts",
@@ -114,53 +60,177 @@ func TestValidatePlatform(t *testing.T) {
 			expected: "bare metal hosts are missing",
 		},
 		{
-			name: "invalid_libvirturi",
-			platform: platform().
-				LibvirtURI("").build(),
-			expected: "invalid URI \"\"",
+			name: "toofew_hosts",
+			config: installConfig().
+				BareMetalPlatform(
+					platform().Hosts(
+						host1())).
+				ControlPlane(
+					machinePool().Replicas(3)).
+				Compute(
+					machinePool().Replicas(2),
+					machinePool().Replicas(3)).build(),
+			expected: "baremetal.Hosts: Required value: not enough hosts found \\(1\\) to support all the configured ControlPlane and Compute replicas \\(8\\)",
 		},
 		{
-			name: "invalid_extbridge",
-			platform: platform().
-				ExternalBridge("noexist").build(),
-			expected: "Invalid value: \"noexist\": invalid external bridge",
+			name: "enough_hosts",
+			config: installConfig().
+				BareMetalPlatform(
+					platform().Hosts(
+						host1(),
+						host2())).
+				ControlPlane(
+					machinePool().Replicas(2)).build(),
 		},
 		{
-			name: "invalid_provbridge",
+			name: "missing_name",
 			platform: platform().
-				ProvisioningBridge("noexist").build(),
-			expected: "Invalid value: \"noexist\": invalid provisioning bridge",
+				Hosts(host1().Name("")).build(),
+			expected: "baremetal.hosts\\[0\\].Name: Required value: missing Name",
 		},
 		{
-			name: "invalid_provisioning_interface",
+			name: "missing_mac",
 			platform: platform().
-				ProvisioningNetworkInterface("").build(),
-			expected: "Invalid value: \"\": no provisioning network interface is configured, please set this value to be the interface on the provisioning network on your cluster's baremetal hosts",
+				Hosts(host1().BootMACAddress("")).build(),
+			expected: "baremetal.hosts\\[0\\].BootMACAddress: Required value: missing BootMACAddress",
 		},
+		{
+			name: "duplicate_host_name",
+			platform: platform().
+				Hosts(
+					host1().Name("host1"),
+					host2().Name("host1")).build(),
+			expected: "baremetal.hosts\\[1\\].Name: Duplicate value: \"host1\"",
+		},
+		{
+			name: "duplicate_host_mac",
+			platform: platform().
+				Hosts(
+					host1().BootMACAddress("CA:FE:CA:FE:CA:FE"),
+					host2().BootMACAddress("CA:FE:CA:FE:CA:FE")).build(),
+			expected: "baremetal.hosts\\[1\\].BootMACAddress: Duplicate value: \"CA:FE:CA:FE:CA:FE\"",
+		},
+		{
+			name: "invalid_boot_mode",
+			platform: platform().
+				Hosts(host1().BootMode("not-a-valid-value")).build(),
+			expected: "baremetal.Hosts\\[0\\].bootMode: Unsupported value: \"not-a-valid-value\": supported values: \"UEFI\", \"UEFISecureBoot\", \"legacy\"",
+		},
+		{
+			name: "uefi_boot_mode",
+			platform: platform().
+				Hosts(host1().BootMode("UEFI")).build(),
+			expected: "",
+		},
+		{
+			name: "uefi_secure_boot_mode",
+			platform: platform().
+				Hosts(host1().BootMode("UEFISecureBoot")).build(),
+			expected: "",
+		},
+		{
+			name: "legacy_boot_mode",
+			platform: platform().
+				Hosts(host1().BootMode("legacy")).build(),
+			expected: "",
+		},
+		{
+			name:     "provisioningNetwork_disabled_valid",
+			platform: platform().ProvisioningNetwork(baremetal.DisabledProvisioningNetwork).build(),
+		},
+		{
+			name:     "provisioningNetwork_unmanaged_valid",
+			platform: platform().ProvisioningNetwork(baremetal.UnmanagedProvisioningNetwork).build(),
+		},
+		{
+			name:     "provisioningNetwork_invalid",
+			platform: platform().ProvisioningNetwork("Invalid").build(),
+			expected: `Unsupported value: "Invalid": supported values: "Disabled", "Managed", "Unmanaged"`,
+		},
+	}
 
-		{
-			name:     "invalid_provisioning_network_overlapping_CIDR",
-			platform: platform().ProvisioningNetworkCIDR("192.168.111.192/23").build(),
-			expected: "Invalid value: \"192.168.111.192/23\": cannot overlap with machine network: 192.168.111.0/24 overlaps with 192.168.111.192/23",
-		},
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			//Build default wrapping installConfig
+			if tc.config == nil {
+				tc.config = installConfig().build()
+				tc.config.BareMetal = tc.platform
+			}
 
+			err := ValidatePlatform(tc.config.BareMetal, network(), field.NewPath("baremetal"), tc.config).ToAggregate()
+
+			if tc.expected == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Regexp(t, tc.expected, err)
+			}
+		})
+	}
+}
+
+func TestValidateProvisioning(t *testing.T) {
+	//Used for url validations
+	imagesServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/gzip")
+		if strings.Contains(r.RequestURI, "notexistent") {
+			http.NotFound(w, r)
+		}
+	}))
+	defer imagesServer.Close()
+
+	interfaceValidator := func(p *baremetal.Platform, fldPath *field.Path) field.ErrorList {
+		errorList := field.ErrorList{}
+
+		if p.ExternalBridge != "br0" {
+			errorList = append(errorList, field.Invalid(fldPath.Child("externalBridge"), p.ExternalBridge,
+				"invalid external bridge"))
+		}
+		if p.ProvisioningBridge != "br1" {
+			errorList = append(errorList, field.Invalid(fldPath.Child("provisioningBridge"), p.ProvisioningBridge,
+				"invalid provisioning bridge"))
+		}
+
+		return errorList
+	}
+	dynamicProvisioningValidators = append(dynamicProvisioningValidators, interfaceValidator)
+
+	cases := []struct {
+		name     string
+		config   *types.InstallConfig
+		platform *baremetal.Platform
+		expected string
+	}{
 		{
-			name: "invalid_clusterprovip_machineCIDR",
+			name: "duplicate_bmc_address",
 			platform: platform().
-				ClusterProvisioningIP("192.168.111.5").build(),
-			expected: "Invalid value: \"192.168.111.5\": the IP must not be in one of the machine networks",
+				Hosts(
+					host1().BMCAddress("ipmi://192.168.111.1"),
+					host2().BMCAddress("ipmi://192.168.111.1")).build(),
+			expected: "baremetal.hosts\\[1\\].BMC.Address: Duplicate value: \"ipmi://192.168.111.1\"",
 		},
 		{
-			name: "invalid_clusterprovip_wrongCIDR",
+			name: "bmc_address_required",
 			platform: platform().
-				ClusterProvisioningIP("192.168.128.1").build(),
-			expected: "Invalid value: \"192.168.128.1\": \"192.168.128.1\" is not in the provisioning network",
+				Hosts(host1().BMCAddress("")).build(),
+			expected: "baremetal.hosts\\[0\\].BMC.Address: Required value: missing Address",
 		},
 		{
-			name: "invalid_bootstrapprovip_machineCIDR",
+			name: "bmc_username_required",
 			platform: platform().
-				BootstrapProvisioningIP("192.168.111.5").build(),
-			expected: "Invalid value: \"192.168.111.5\": the IP must not be in one of the machine networks",
+				Hosts(host1().BMCUsername("")).build(),
+			expected: "baremetal.hosts\\[0\\].BMC.Username: Required value: missing Username",
+		},
+		{
+			name: "bmc_password_required",
+			platform: platform().
+				Hosts(host1().BMCPassword("")).build(),
+			expected: "baremetal.hosts\\[0\\].BMC.Password: Required value: missing Password",
+		},
+		{
+			name: "valid_with_os_image_overrides",
+			platform: platform().
+				BootstrapOSImage(imagesServer.URL + "/images/qemu.x86_64.qcow2.gz?sha256=3b5a882c2af3e19d515b961855d144f293cab30190c2bdedd661af31a1fc4e2f").
+				ClusterOSImage(imagesServer.URL + "/images/metal.x86_64.qcow2.gz?sha256=340dfa4d92450f2eee852ed1e2d02e3138cc68d824827ef9cf0a40a7ea2f93da").build(),
 		},
 		{
 			name: "invalid_bootstraposimage",
@@ -211,87 +281,159 @@ func TestValidatePlatform(t *testing.T) {
 			expected: "baremetal.ClusterOSImage: Not found:.*",
 		},
 		{
+			name: "invalid_extbridge",
+			platform: platform().
+				ExternalBridge("noexist").build(),
+			expected: "Invalid value: \"noexist\": invalid external bridge",
+		},
+		{
+			name:     "valid_extbridge_mac",
+			platform: platform().ExternalMACAddress("CA:FE:CA:FE:CA:FE").build(),
+		},
+		{
+			name: "invalid_provbridge",
+			platform: platform().
+				ProvisioningBridge("noexist").build(),
+			expected: "Invalid value: \"noexist\": invalid provisioning bridge",
+		},
+		{
+			name:     "valid_provbridge_mac",
+			platform: platform().ProvisioningMACAddress("CA:FE:CA:FE:CA:FE").build(),
+		},
+		{
+			name: "invalid_duplicate_bridge_macs",
+			platform: platform().
+				ProvisioningMACAddress("CA:FE:CA:FE:CA:FE").
+				ExternalMACAddress("CA:FE:CA:FE:CA:FE").
+				build(),
+			expected: "Duplicate value: \"provisioning and external MAC addresses may not be identical\"",
+		},
+		{
+			name: "valid_both_macs_specified",
+			platform: platform().
+				ProvisioningMACAddress("CA:FE:CA:FE:CA:FD").
+				ExternalMACAddress("CA:FE:CA:FE:CA:FE").
+				build(),
+		},
+		{
+			name: "invalid_multicast_mac",
+			platform: platform().
+				ExternalMACAddress("7D:CE:E3:29:35:6F").
+				build(),
+			expected: "expected unicast mac address, found multicast",
+		},
+		{
 			name: "invalid_bootstrapprovip_wrongCIDR",
 			platform: platform().
 				BootstrapProvisioningIP("192.168.128.1").build(),
 			expected: "Invalid value: \"192.168.128.1\": \"192.168.128.1\" is not in the provisioning network",
 		},
 		{
-			name: "duplicate_bmc_address",
+			name: "invalid_bootstrapprovip_machineCIDR",
 			platform: platform().
-				Hosts(
-					host1().BMCAddress("ipmi://192.168.111.1"),
-					host2().BMCAddress("ipmi://192.168.111.1")).build(),
-			expected: "baremetal.hosts\\[1\\].BMC.Address: Duplicate value: \"ipmi://192.168.111.1\"",
+				BootstrapProvisioningIP("192.168.111.5").build(),
+			expected: "Invalid value: \"192.168.111.5\": \"192.168.111.5\" is not in the provisioning network",
 		},
+
 		{
-			name: "bmc_address_required",
+			name: "invalid_clusterprovip_machineCIDR",
 			platform: platform().
-				Hosts(host1().BMCAddress("")).build(),
-			expected: "baremetal.hosts\\[0\\].BMC.Address: Required value: missing Address",
+				ClusterProvisioningIP("192.168.111.5").build(),
+			expected: "Invalid value: \"192.168.111.5\": \"192.168.111.5\" is not in the provisioning network",
 		},
 		{
-			name: "bmc_username_required",
+			name: "invalid_clusterprovip_wrongCIDR",
 			platform: platform().
-				Hosts(host1().BMCUsername("")).build(),
-			expected: "baremetal.hosts\\[0\\].BMC.Username: Required value: missing Username",
+				ClusterProvisioningIP("192.168.128.1").build(),
+			expected: "Invalid value: \"192.168.128.1\": \"192.168.128.1\" is not in the provisioning network",
 		},
 		{
-			name: "bmc_password_required",
+			name:     "invalid_provisioning_network_overlapping_CIDR",
+			platform: platform().ProvisioningNetworkCIDR("192.168.111.192/23").build(),
+			expected: "Invalid value: \"192.168.111.192/23\": cannot overlap with machine network: 192.168.111.0/24 overlaps with 192.168.111.192/23",
+		},
+		{
+			name: "invalid_provisioning_interface",
 			platform: platform().
-				Hosts(host1().BMCPassword("")).build(),
-			expected: "baremetal.hosts\\[0\\].BMC.Password: Required value: missing Password",
+				ProvisioningNetworkInterface("").build(),
+			expected: "Invalid value: \"\": no provisioning network interface is configured, please set this value to be the interface on the provisioning network on your cluster's baremetal hosts",
 		},
 		{
-			name: "duplicate_host_name",
+			name: "valid_provisioningDHCPRange",
 			platform: platform().
-				Hosts(
-					host1().Name("host1"),
-					host2().Name("host1")).build(),
-			expected: "baremetal.hosts\\[1\\].Name: Duplicate value: \"host1\"",
+				ProvisioningDHCPRange("172.22.0.10,172.22.0.50").build(),
 		},
 		{
-			name: "duplicate_host_mac",
+			name: "invalid_provisioningDHCPRange_missing_pair",
 			platform: platform().
-				Hosts(
-					host1().BootMACAddress("CA:FE:CA:FE:CA:FE"),
-					host2().BootMACAddress("CA:FE:CA:FE:CA:FE")).build(),
-			expected: "baremetal.hosts\\[1\\].BootMACAddress: Duplicate value: \"CA:FE:CA:FE:CA:FE\"",
+				ProvisioningDHCPRange("172.22.0.10,").build(),
+			expected: "provisioningDHCPRange: Invalid value: \"172.22.0.10,\": : \"\" is not a valid IP",
 		},
 		{
-			name: "missing_name",
+			name: "invalid_provisioningDHCPRange_not_a_range",
 			platform: platform().
-				Hosts(host1().Name("")).build(),
-			expected: "baremetal.hosts\\[0\\].Name: Required value: missing Name",
+				ProvisioningDHCPRange("172.22.0.19").build(),
+			expected: "Invalid value: \"172.22.0.19\": provisioning DHCP range should be in format: start_ip,end_ip",
 		},
 		{
-			name: "missing_mac",
+			name: "invalid_provisioningDHCPRange_wrong_CIDR",
 			platform: platform().
-				Hosts(host1().BootMACAddress("")).build(),
-			expected: "baremetal.hosts\\[0\\].BootMACAddress: Required value: missing BootMACAddress",
+				ProvisioningDHCPRange("192.168.128.1,172.22.0.100").build(),
+			expected: "Invalid value: \"192.168.128.1,172.22.0.100\": \"192.168.128.1\" is not in the provisioning network",
 		},
 		{
-			name: "toofew_hosts",
-			config: installConfig().
-				BareMetalPlatform(
-					platform().Hosts(
-						host1())).
-				ControlPlane(
-					machinePool().Replicas(3)).
-				Compute(
-					machinePool().Replicas(2),
-					machinePool().Replicas(3)).build(),
-			expected: "baremetal.Hosts: Required value: not enough hosts found \\(1\\) to support all the configured ControlPlane and Compute replicas \\(8\\)",
+			name: "invalid_clusterprovip_overlapDHCPRange",
+			platform: platform().
+				ClusterProvisioningIP("172.22.0.10").build(),
+			expected: "Invalid value: \"172.22.0.10\": \"172.22.0.10\" overlaps with the allocated DHCP range",
 		},
 		{
-			name: "enough_hosts",
-			config: installConfig().
-				BareMetalPlatform(
-					platform().Hosts(
-						host1(),
-						host2())).
-				ControlPlane(
-					machinePool().Replicas(2)).build(),
+			name: "invalid_bootstrapprovip_overlapDHCPRange",
+			platform: platform().
+				BootstrapProvisioningIP("172.22.0.20").build(),
+			expected: "Invalid value: \"172.22.0.20\": \"172.22.0.20\" overlaps with the allocated DHCP range",
+		},
+		{
+			name: "invalid_libvirturi",
+			platform: platform().
+				LibvirtURI("bad").build(),
+			expected: "invalid URI \"bad\"",
+		},
+
+		// Disabled provisioning network
+		{
+			name:   "valid_provisioningDisabled_noProvisioningInterface",
+			config: installConfig().Network(networking().Network("192.168.111.0/24")).build(),
+			platform: platform().
+				ProvisioningNetwork(baremetal.DisabledProvisioningNetwork).
+				ClusterProvisioningIP("192.168.111.2").
+				BootstrapProvisioningIP("192.168.111.3").
+				ProvisioningNetworkInterface("").build(),
+		},
+		{
+			name:   "valid_provisioningDisabled_IPs_in_machineCIDR",
+			config: installConfig().Network(networking().Network("192.168.111.0/24")).build(),
+			platform: platform().
+				ProvisioningNetwork(baremetal.DisabledProvisioningNetwork).
+				ClusterProvisioningIP("192.168.111.2").
+				BootstrapProvisioningIP("192.168.111.3").build(),
+		},
+		{
+			name:   "valid_provisioningDisabled_no_provisioning_ips",
+			config: installConfig().Network(networking().Network("192.168.111.0/24")).build(),
+			platform: platform().
+				ProvisioningNetwork(baremetal.DisabledProvisioningNetwork).
+				ClusterProvisioningIP("").
+				BootstrapProvisioningIP("").build(),
+		},
+		{
+			name:   "invalid_provisioningDisabled_IPs_not_in_machineCIDR",
+			config: installConfig().Network(networking().Network("192.168.111.0/24")).build(),
+			platform: platform().
+				ProvisioningNetwork(baremetal.DisabledProvisioningNetwork).
+				BootstrapProvisioningIP("192.168.111.3").
+				ClusterProvisioningIP("192.168.0.2").build(),
+			expected: "Invalid value: \"192.168.0.2\": provisioning network is disabled, IP expected to be in one of the machine networks: 192.168.111.0/24",
 		},
 	}
 
@@ -300,10 +442,12 @@ func TestValidatePlatform(t *testing.T) {
 			//Build default wrapping installConfig
 			if tc.config == nil {
 				tc.config = installConfig().build()
-				tc.config.BareMetal = tc.platform
 			}
+			tc.config.BareMetal = tc.platform
 
-			err := ValidatePlatform(tc.config.BareMetal, network(), field.NewPath("baremetal"), tc.config).ToAggregate()
+			defaults.SetPlatformDefaults(tc.config.BareMetal, tc.config)
+
+			err := ValidateProvisioning(tc.config.BareMetal, network(), field.NewPath("baremetal")).ToAggregate()
 
 			if tc.expected == "" {
 				assert.NoError(t, err)
@@ -360,6 +504,11 @@ func (hb *hostBuilder) BootMACAddress(value string) *hostBuilder {
 	return hb
 }
 
+func (hb *hostBuilder) BootMode(value string) *hostBuilder {
+	hb.Host.BootMode = baremetal.BootMode(value)
+	return hb
+}
+
 func (hb *hostBuilder) BMCAddress(value string) *hostBuilder {
 	hb.Host.BMC.Address = value
 	return hb
@@ -387,6 +536,7 @@ func platform() *platformBuilder {
 			Hosts:                        []*baremetal.Host{},
 			LibvirtURI:                   "qemu://system",
 			ProvisioningNetworkCIDR:      ipnet.MustParseCIDR("172.22.0.0/24"),
+			ProvisioningNetwork:          baremetal.ManagedProvisioningNetwork,
 			ClusterProvisioningIP:        "172.22.0.3",
 			BootstrapProvisioningIP:      "172.22.0.2",
 			ExternalBridge:               "br0",
@@ -401,6 +551,11 @@ func (pb *platformBuilder) build() *baremetal.Platform {
 
 func (pb *platformBuilder) ProvisioningNetworkCIDR(value string) *platformBuilder {
 	pb.Platform.ProvisioningNetworkCIDR = ipnet.MustParseCIDR(value)
+	return pb
+}
+
+func (pb *platformBuilder) ProvisioningNetwork(value baremetal.ProvisioningNetwork) *platformBuilder {
+	pb.Platform.ProvisioningNetwork = value
 	return pb
 }
 
@@ -457,8 +612,18 @@ func (pb *platformBuilder) ExternalBridge(value string) *platformBuilder {
 	return pb
 }
 
+func (pb *platformBuilder) ExternalMACAddress(value string) *platformBuilder {
+	pb.Platform.ExternalMACAddress = value
+	return pb
+}
+
 func (pb *platformBuilder) ProvisioningBridge(value string) *platformBuilder {
 	pb.Platform.ProvisioningBridge = value
+	return pb
+}
+
+func (pb *platformBuilder) ProvisioningMACAddress(value string) *platformBuilder {
+	pb.Platform.ProvisioningMACAddress = value
 	return pb
 }
 
@@ -498,6 +663,12 @@ func (icb *installConfigBuilder) ControlPlane(builder *machinePoolBuilder) *inst
 	return icb
 }
 
+func (icb *installConfigBuilder) Network(builder *networkingBuilder) *installConfigBuilder {
+	icb.InstallConfig.Networking = builder.build()
+
+	return icb
+}
+
 func (icb *installConfigBuilder) Compute(builders ...*machinePoolBuilder) *installConfigBuilder {
 	icb.InstallConfig.Compute = nil
 	for _, builder := range builders {
@@ -523,4 +694,28 @@ func (mpb *machinePoolBuilder) build() *types.MachinePool {
 func (mpb *machinePoolBuilder) Replicas(count int64) *machinePoolBuilder {
 	mpb.MachinePool.Replicas = &count
 	return mpb
+}
+
+type networkingBuilder struct {
+	types.Networking
+}
+
+func networking() *networkingBuilder {
+	return &networkingBuilder{
+		Networking: types.Networking{},
+	}
+}
+
+func (nb *networkingBuilder) Network(cidr string) *networkingBuilder {
+	network := ipnet.MustParseCIDR(cidr)
+
+	nb.MachineNetwork = append(nb.MachineNetwork, types.MachineNetworkEntry{
+		CIDR: *network,
+	})
+
+	return nb
+}
+
+func (nb *networkingBuilder) build() *types.Networking {
+	return &nb.Networking
 }

@@ -36,7 +36,9 @@ func NewInterfaceTapConfigurationsClient(subscriptionID string) InterfaceTapConf
 	return NewInterfaceTapConfigurationsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewInterfaceTapConfigurationsClientWithBaseURI creates an instance of the InterfaceTapConfigurationsClient client.
+// NewInterfaceTapConfigurationsClientWithBaseURI creates an instance of the InterfaceTapConfigurationsClient client
+// using a custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign
+// clouds, Azure stack).
 func NewInterfaceTapConfigurationsClientWithBaseURI(baseURI string, subscriptionID string) InterfaceTapConfigurationsClient {
 	return InterfaceTapConfigurationsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -101,7 +103,7 @@ func (client InterfaceTapConfigurationsClient) CreateOrUpdate(ctx context.Contex
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -136,13 +138,38 @@ func (client InterfaceTapConfigurationsClient) CreateOrUpdatePreparer(ctx contex
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceTapConfigurationsClient) CreateOrUpdateSender(req *http.Request) (future InterfaceTapConfigurationsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InterfaceTapConfigurationsClient) (itc InterfaceTapConfiguration, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.InterfaceTapConfigurationsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		itc.Response.Response, err = future.GetResult(sender)
+		if itc.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && itc.Response.Response.StatusCode != http.StatusNoContent {
+			itc, err = client.CreateOrUpdateResponder(itc.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsCreateOrUpdateFuture", "Result", itc.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -151,7 +178,6 @@ func (client InterfaceTapConfigurationsClient) CreateOrUpdateSender(req *http.Re
 func (client InterfaceTapConfigurationsClient) CreateOrUpdateResponder(resp *http.Response) (result InterfaceTapConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -183,7 +209,7 @@ func (client InterfaceTapConfigurationsClient) Delete(ctx context.Context, resou
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -215,13 +241,28 @@ func (client InterfaceTapConfigurationsClient) DeletePreparer(ctx context.Contex
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceTapConfigurationsClient) DeleteSender(req *http.Request) (future InterfaceTapConfigurationsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client InterfaceTapConfigurationsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.InterfaceTapConfigurationsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -230,7 +271,6 @@ func (client InterfaceTapConfigurationsClient) DeleteSender(req *http.Request) (
 func (client InterfaceTapConfigurationsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -269,6 +309,7 @@ func (client InterfaceTapConfigurationsClient) Get(ctx context.Context, resource
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -299,8 +340,7 @@ func (client InterfaceTapConfigurationsClient) GetPreparer(ctx context.Context, 
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceTapConfigurationsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -308,7 +348,6 @@ func (client InterfaceTapConfigurationsClient) GetSender(req *http.Request) (*ht
 func (client InterfaceTapConfigurationsClient) GetResponder(resp *http.Response) (result InterfaceTapConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -348,6 +387,11 @@ func (client InterfaceTapConfigurationsClient) List(ctx context.Context, resourc
 	result.itclr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.itclr.hasNextLink() && result.itclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -377,8 +421,7 @@ func (client InterfaceTapConfigurationsClient) ListPreparer(ctx context.Context,
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceTapConfigurationsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -386,7 +429,6 @@ func (client InterfaceTapConfigurationsClient) ListSender(req *http.Request) (*h
 func (client InterfaceTapConfigurationsClient) ListResponder(resp *http.Response) (result InterfaceTapConfigurationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

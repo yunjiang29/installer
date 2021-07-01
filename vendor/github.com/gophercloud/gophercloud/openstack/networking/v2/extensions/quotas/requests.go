@@ -4,7 +4,15 @@ import "github.com/gophercloud/gophercloud"
 
 // Get returns Networking Quotas for a project.
 func Get(client *gophercloud.ServiceClient, projectID string) (r GetResult) {
-	_, r.Err = client.Get(getURL(client, projectID), &r.Body, nil)
+	resp, err := client.Get(getURL(client, projectID), &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
+	return
+}
+
+// GetDetail returns detailed Networking Quotas for a project.
+func GetDetail(client *gophercloud.ServiceClient, projectID string) (r GetDetailResult) {
+	resp, err := client.Get(getDetailURL(client, projectID), &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -42,6 +50,9 @@ type UpdateOpts struct {
 
 	// SubnetPool represents a number of subnet pools. A "-1" value means no limit.
 	SubnetPool *int `json:"subnetpool,omitempty"`
+
+	// Trunk represents a number of trunks. A "-1" value means no limit.
+	Trunk *int `json:"trunk,omitempty"`
 }
 
 // ToQuotaUpdateMap builds a request body from UpdateOpts.
@@ -57,9 +68,9 @@ func Update(c *gophercloud.ServiceClient, projectID string, opts UpdateOptsBuild
 		r.Err = err
 		return
 	}
-	_, r.Err = c.Put(updateURL(c, projectID), b, &r.Body, &gophercloud.RequestOpts{
+	resp, err := c.Put(updateURL(c, projectID), b, &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
-
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }

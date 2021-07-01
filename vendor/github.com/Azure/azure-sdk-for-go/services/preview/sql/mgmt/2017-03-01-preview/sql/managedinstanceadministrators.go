@@ -39,7 +39,8 @@ func NewManagedInstanceAdministratorsClient(subscriptionID string) ManagedInstan
 }
 
 // NewManagedInstanceAdministratorsClientWithBaseURI creates an instance of the ManagedInstanceAdministratorsClient
-// client.
+// client using a custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI
+// (sovereign clouds, Azure stack).
 func NewManagedInstanceAdministratorsClientWithBaseURI(baseURI string, subscriptionID string) ManagedInstanceAdministratorsClient {
 	return ManagedInstanceAdministratorsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -79,7 +80,7 @@ func (client ManagedInstanceAdministratorsClient) CreateOrUpdate(ctx context.Con
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -113,13 +114,38 @@ func (client ManagedInstanceAdministratorsClient) CreateOrUpdatePreparer(ctx con
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceAdministratorsClient) CreateOrUpdateSender(req *http.Request) (future ManagedInstanceAdministratorsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedInstanceAdministratorsClient) (mia ManagedInstanceAdministrator, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedInstanceAdministratorsCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		mia.Response.Response, err = future.GetResult(sender)
+		if mia.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && mia.Response.Response.StatusCode != http.StatusNoContent {
+			mia, err = client.CreateOrUpdateResponder(mia.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsCreateOrUpdateFuture", "Result", mia.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -128,7 +154,6 @@ func (client ManagedInstanceAdministratorsClient) CreateOrUpdateSender(req *http
 func (client ManagedInstanceAdministratorsClient) CreateOrUpdateResponder(resp *http.Response) (result ManagedInstanceAdministrator, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -160,7 +185,7 @@ func (client ManagedInstanceAdministratorsClient) Delete(ctx context.Context, re
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -192,13 +217,28 @@ func (client ManagedInstanceAdministratorsClient) DeletePreparer(ctx context.Con
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceAdministratorsClient) DeleteSender(req *http.Request) (future ManagedInstanceAdministratorsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedInstanceAdministratorsClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedInstanceAdministratorsDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -207,7 +247,6 @@ func (client ManagedInstanceAdministratorsClient) DeleteSender(req *http.Request
 func (client ManagedInstanceAdministratorsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -246,6 +285,7 @@ func (client ManagedInstanceAdministratorsClient) Get(ctx context.Context, resou
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -276,8 +316,7 @@ func (client ManagedInstanceAdministratorsClient) GetPreparer(ctx context.Contex
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceAdministratorsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -285,7 +324,6 @@ func (client ManagedInstanceAdministratorsClient) GetSender(req *http.Request) (
 func (client ManagedInstanceAdministratorsClient) GetResponder(resp *http.Response) (result ManagedInstanceAdministrator, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -326,6 +364,11 @@ func (client ManagedInstanceAdministratorsClient) ListByInstance(ctx context.Con
 	result.mialr, err = client.ListByInstanceResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedInstanceAdministratorsClient", "ListByInstance", resp, "Failure responding to request")
+		return
+	}
+	if result.mialr.hasNextLink() && result.mialr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -355,8 +398,7 @@ func (client ManagedInstanceAdministratorsClient) ListByInstancePreparer(ctx con
 // ListByInstanceSender sends the ListByInstance request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedInstanceAdministratorsClient) ListByInstanceSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByInstanceResponder handles the response to the ListByInstance request. The method always
@@ -364,7 +406,6 @@ func (client ManagedInstanceAdministratorsClient) ListByInstanceSender(req *http
 func (client ManagedInstanceAdministratorsClient) ListByInstanceResponder(resp *http.Response) (result ManagedInstanceAdministratorListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

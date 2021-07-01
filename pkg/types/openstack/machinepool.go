@@ -22,9 +22,14 @@ type MachinePool struct {
 	// where each ID is presented in UUID v4 format.
 	// +optional
 	AdditionalSecurityGroupIDs []string `json:"additionalSecurityGroupIDs,omitempty"`
+
+	// Zones is the list of availability zones where the instances should be deployed.
+	// If no zones are provided, all instances will be deployed on OpenStack Nova default availability zone
+	// +optional
+	Zones []string `json:"zones,omitempty"`
 }
 
-// Set sets the values from `required` to `a`.
+// Set sets the values from `required` to `o`.
 func (o *MachinePool) Set(required *MachinePool) {
 	if required == nil || o == nil {
 		return
@@ -40,6 +45,9 @@ func (o *MachinePool) Set(required *MachinePool) {
 		}
 		o.RootVolume.Size = required.RootVolume.Size
 		o.RootVolume.Type = required.RootVolume.Type
+		if len(required.RootVolume.Zones) > 0 {
+			o.RootVolume.Zones = required.RootVolume.Zones
+		}
 	}
 
 	if required.AdditionalNetworkIDs != nil {
@@ -48,6 +56,10 @@ func (o *MachinePool) Set(required *MachinePool) {
 
 	if required.AdditionalSecurityGroupIDs != nil {
 		o.AdditionalSecurityGroupIDs = append(required.AdditionalSecurityGroupIDs[:0:0], required.AdditionalSecurityGroupIDs...)
+	}
+
+	if len(required.Zones) > 0 {
+		o.Zones = required.Zones
 	}
 }
 
@@ -59,4 +71,9 @@ type RootVolume struct {
 	// Type defines the type of the volume.
 	// Required
 	Type string `json:"type"`
+
+	// Zones is the list of availability zones where the root volumes should be deployed.
+	// If no zones are provided, all instances will be deployed on OpenStack Cinder default availability zone
+	// +optional
+	Zones []string `json:"zones,omitempty"`
 }

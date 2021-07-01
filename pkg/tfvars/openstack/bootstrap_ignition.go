@@ -1,18 +1,23 @@
 package openstack
 
 import (
+	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"strings"
 
-	ignition "github.com/coreos/ignition/config/v2_4/types"
+	ignutil "github.com/coreos/ignition/v2/config/util"
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/imagedata"
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 	"github.com/sirupsen/logrus"
 	"github.com/vincent-petithory/dataurl"
+
+	"github.com/openshift/installer/pkg/asset/ignition"
+	"github.com/openshift/installer/pkg/types"
+	openstackdefaults "github.com/openshift/installer/pkg/types/openstack/defaults"
 )
 
 // Starting from OpenShift 4.4 we store bootstrap Ignition configs in Glance.
@@ -20,11 +25,8 @@ import (
 // uploadBootstrapConfig uploads the bootstrap Ignition config in Glance and returns its location
 func uploadBootstrapConfig(cloud string, bootstrapIgn string, clusterID string) (string, error) {
 	logrus.Debugln("Creating a Glance image for your bootstrap ignition config...")
-	opts := clientconfig.ClientOpts{
-		Cloud: cloud,
-	}
 
-	conn, err := clientconfig.NewServiceClient("image", &opts)
+	conn, err := clientconfig.NewServiceClient("image", openstackdefaults.DefaultClientOpts(cloud))
 	if err != nil {
 		return "", err
 	}
@@ -54,6 +56,28 @@ func uploadBootstrapConfig(cloud string, bootstrapIgn string, clusterID string) 
 	return img.File, nil
 }
 
+// parseCertificateBundle loads each certificate in the bundle to the Ingition
+// carrier type, ignoring any invisible character before, after and in between
+// certificates.
+func parseCertificateBundle(userCA []byte) ([]igntypes.Resource, error) {
+	userCA = bytes.TrimSpace(userCA)
+
+	var carefs []igntypes.Resource
+	for len(userCA) > 0 {
+		var block *pem.Block
+		block, userCA = pem.Decode(userCA)
+		if block == nil {
+			return nil, fmt.Errorf("unable to parse certificate, please check the cacert section of clouds.yaml")
+		}
+
+		carefs = append(carefs, igntypes.Resource{Source: ignutil.StrToPtr(dataurl.EncodeBytes(pem.EncodeToMemory(block)))})
+
+		userCA = bytes.TrimSpace(userCA)
+	}
+
+	return carefs, nil
+}
+
 // To allow Ignition to download its config on the bootstrap machine from a location secured by a
 // self-signed certificate, we have to provide it a valid custom ca bundle.
 // To do so we generate a small ignition config that contains just Security section with the bundle
@@ -63,94 +87,83 @@ func uploadBootstrapConfig(cloud string, bootstrapIgn string, clusterID string) 
 
 // generateIgnitionShim is used to generate an ignition file that contains a user ca bundle
 // in its Security section.
-func generateIgnitionShim(userCA string, clusterID string, bootstrapConfigURL string, tokenID string) (string, error) {
+func generateIgnitionShim(userCA string, clusterID string, bootstrapConfigURL string, tokenID string, proxy *types.Proxy) (string, error) {
 	fileMode := 420
+	bootstrapHTTPResponseHeaders := 120
 
 	// Hostname Config
 	contents := fmt.Sprintf("%s-bootstrap", clusterID)
 
-	hostnameConfigFile := ignition.File{
-		Node: ignition.Node{
-			Filesystem: "root",
-			Path:       "/etc/hostname",
+	hostnameConfigFile := igntypes.File{
+		Node: igntypes.Node{
+			Path:      "/etc/hostname",
+			Overwrite: ignutil.BoolToPtr(true),
 		},
-		FileEmbedded1: ignition.FileEmbedded1{
+		FileEmbedded1: igntypes.FileEmbedded1{
 			Mode: &fileMode,
-			Contents: ignition.FileContents{
-				Source: dataurl.EncodeBytes([]byte(contents)),
+			Contents: igntypes.Resource{
+				Source: ignutil.StrToPtr(dataurl.EncodeBytes([]byte(contents))),
 			},
 		},
 	}
 
 	// Openstack Ca Cert file
-	openstackCAFile := ignition.File{
-		Node: ignition.Node{
-			Filesystem: "root",
-			Path:       "/opt/openshift/tls/cloud-ca-cert.pem",
+	openstackCAFile := igntypes.File{
+		Node: igntypes.Node{
+			Path:      "/opt/openshift/tls/cloud-ca-cert.pem",
+			Overwrite: ignutil.BoolToPtr(true),
 		},
-		FileEmbedded1: ignition.FileEmbedded1{
+		FileEmbedded1: igntypes.FileEmbedded1{
 			Mode: &fileMode,
-			Contents: ignition.FileContents{
-				Source: dataurl.EncodeBytes([]byte(userCA)),
+			Contents: igntypes.Resource{
+				Source: ignutil.StrToPtr(dataurl.EncodeBytes([]byte(userCA))),
 			},
 		},
 	}
 
-	security := ignition.Security{}
-	if userCA != "" {
-		carefs := []ignition.CaReference{}
-		rest := []byte(userCA)
-
-		for {
-			var block *pem.Block
-			block, rest = pem.Decode(rest)
-			if block == nil {
-				return "", fmt.Errorf("unable to parse certificate, please check the cacert section of clouds.yaml")
-			}
-
-			carefs = append(carefs, ignition.CaReference{Source: dataurl.EncodeBytes(pem.EncodeToMemory(block))})
-
-			if len(rest) == 0 {
-				break
-			}
-		}
-
-		security = ignition.Security{
-			TLS: ignition.TLS{
-				CertificateAuthorities: carefs,
-			},
-		}
+	carefs, err := parseCertificateBundle([]byte(userCA))
+	if err != nil {
+		return "", err
+	}
+	security := igntypes.Security{
+		TLS: igntypes.TLS{
+			CertificateAuthorities: carefs,
+		},
 	}
 
-	headers := []ignition.HTTPHeader{
+	headers := []igntypes.HTTPHeader{
 		{
 			Name:  "X-Auth-Token",
-			Value: tokenID,
+			Value: ignutil.StrToPtr(tokenID),
 		},
 	}
 
-	ign := ignition.Config{
-		Ignition: ignition.Ignition{
-			Version:  ignition.MaxVersion.String(),
+	ign := igntypes.Config{
+		Ignition: igntypes.Ignition{
+			Version: igntypes.MaxVersion.String(),
+			Timeouts: igntypes.Timeouts{
+				HTTPResponseHeaders: &bootstrapHTTPResponseHeaders,
+			},
 			Security: security,
-			Config: ignition.IgnitionConfig{
-				Append: []ignition.ConfigReference{
+			Config: igntypes.IgnitionConfig{
+				Merge: []igntypes.Resource{
 					{
-						Source:      bootstrapConfigURL,
+						Source:      ignutil.StrToPtr(bootstrapConfigURL),
 						HTTPHeaders: headers,
 					},
 				},
 			},
+			Proxy: ignitionProxy(proxy),
 		},
-		Storage: ignition.Storage{
-			Files: []ignition.File{
+		Storage: igntypes.Storage{
+			Files: []igntypes.File{
 				hostnameConfigFile,
 				openstackCAFile,
 			},
 		},
 	}
 
-	data, err := json.Marshal(ign)
+	data, err := ignition.Marshal(ign)
 	if err != nil {
 		return "", err
 	}
@@ -166,11 +179,7 @@ func generateIgnitionShim(userCA string, clusterID string, bootstrapConfigURL st
 
 // getAuthToken fetches valid OpenStack authentication token ID
 func getAuthToken(cloud string) (string, error) {
-	opts := &clientconfig.ClientOpts{
-		Cloud: cloud,
-	}
-
-	conn, err := clientconfig.NewServiceClient("identity", opts)
+	conn, err := clientconfig.NewServiceClient("identity", openstackdefaults.DefaultClientOpts(cloud))
 	if err != nil {
 		return "", err
 	}
@@ -181,4 +190,25 @@ func getAuthToken(cloud string) (string, error) {
 	}
 
 	return token, nil
+}
+
+func ignitionProxy(proxy *types.Proxy) igntypes.Proxy {
+	var ignProxy igntypes.Proxy
+	if proxy == nil {
+		return ignProxy
+	}
+	if httpProxy := proxy.HTTPProxy; httpProxy != "" {
+		ignProxy.HTTPProxy = &httpProxy
+	}
+	if httpsProxy := proxy.HTTPSProxy; httpsProxy != "" {
+		ignProxy.HTTPSProxy = &httpsProxy
+	}
+	ignProxy.NoProxy = make([]igntypes.NoProxyItem, 0, len(proxy.NoProxy))
+	if noProxy := proxy.NoProxy; noProxy != "" {
+		noProxySplit := strings.Split(noProxy, ",")
+		for _, p := range noProxySplit {
+			ignProxy.NoProxy = append(ignProxy.NoProxy, igntypes.NoProxyItem(p))
+		}
+	}
+	return ignProxy
 }

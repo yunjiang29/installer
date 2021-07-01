@@ -11,9 +11,13 @@
 * [GCP (UPI)](docs/user/gcp/install_upi.md)
 * [Libvirt with KVM](docs/dev/libvirt/README.md) (development only)
 * [OpenStack](docs/user/openstack/README.md)
-* [OpenStack (UPI) (Experimental)](docs/user/openstack/install_upi.md)
+* [OpenStack (UPI)](docs/user/openstack/install_upi.md)
+* [Power](docs/user/power/install_upi.md)
 * [oVirt](docs/user/ovirt/install_ipi.md)
-* [vSphere](docs/user/vsphere/install_upi.md)
+* [oVirt (UPI)](docs/user/ovirt/install_upi.md)
+* [vSphere](docs/user/vsphere/README.md)
+* [vSphere (UPI)](docs/user/vsphere/install_upi.md)
+* [z/VM](docs/user/zvm/install_upi.md)
 
 ## Quick Start
 
@@ -59,5 +63,5 @@ openshift-install destroy cluster
 ```
 
 Note that you almost certainly also want to clean up the installer state files too, including `auth/`, `terraform.tfstate`, etc.
-The best thing to do is always pass the `--dir` argument to `install` and `destroy`.
+The best thing to do is always pass the `--dir` argument to `create` and `destroy`.
 And if you want to reinstall from scratch, `rm -rf` the asset directory beforehand.

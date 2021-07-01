@@ -38,7 +38,8 @@ func NewDatabasesClient(subscriptionID string) DatabasesClient {
 	return NewDatabasesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewDatabasesClientWithBaseURI creates an instance of the DatabasesClient client.
+// NewDatabasesClientWithBaseURI creates an instance of the DatabasesClient client using a custom endpoint.  Use this
+// when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewDatabasesClientWithBaseURI(baseURI string, subscriptionID string) DatabasesClient {
 	return DatabasesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -77,7 +78,7 @@ func (client DatabasesClient) CreateImportOperation(ctx context.Context, resourc
 
 	result, err = client.CreateImportOperationSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "CreateImportOperation", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "CreateImportOperation", nil, "Failure sending request")
 		return
 	}
 
@@ -112,13 +113,38 @@ func (client DatabasesClient) CreateImportOperationPreparer(ctx context.Context,
 // CreateImportOperationSender sends the CreateImportOperation request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) CreateImportOperationSender(req *http.Request) (future DatabasesCreateImportOperationFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (ier ImportExportResponse, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesCreateImportOperationFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesCreateImportOperationFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		ier.Response.Response, err = future.GetResult(sender)
+		if ier.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesCreateImportOperationFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && ier.Response.Response.StatusCode != http.StatusNoContent {
+			ier, err = client.CreateImportOperationResponder(ier.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.DatabasesCreateImportOperationFuture", "Result", ier.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -127,7 +153,6 @@ func (client DatabasesClient) CreateImportOperationSender(req *http.Request) (fu
 func (client DatabasesClient) CreateImportOperationResponder(resp *http.Response) (result ImportExportResponse, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -161,7 +186,7 @@ func (client DatabasesClient) CreateOrUpdate(ctx context.Context, resourceGroupN
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -196,13 +221,38 @@ func (client DatabasesClient) CreateOrUpdatePreparer(ctx context.Context, resour
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) CreateOrUpdateSender(req *http.Request) (future DatabasesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (d Database, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		d.Response.Response, err = future.GetResult(sender)
+		if d.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && d.Response.Response.StatusCode != http.StatusNoContent {
+			d, err = client.CreateOrUpdateResponder(d.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.DatabasesCreateOrUpdateFuture", "Result", d.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -211,7 +261,6 @@ func (client DatabasesClient) CreateOrUpdateSender(req *http.Request) (future Da
 func (client DatabasesClient) CreateOrUpdateResponder(resp *http.Response) (result Database, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -252,6 +301,7 @@ func (client DatabasesClient) Delete(ctx context.Context, resourceGroupName stri
 	result, err = client.DeleteResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Delete", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -282,8 +332,7 @@ func (client DatabasesClient) DeletePreparer(ctx context.Context, resourceGroupN
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) DeleteSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // DeleteResponder handles the response to the Delete request. The method always
@@ -291,7 +340,6 @@ func (client DatabasesClient) DeleteSender(req *http.Request) (*http.Response, e
 func (client DatabasesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -333,7 +381,7 @@ func (client DatabasesClient) Export(ctx context.Context, resourceGroupName stri
 
 	result, err = client.ExportSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Export", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Export", nil, "Failure sending request")
 		return
 	}
 
@@ -367,13 +415,38 @@ func (client DatabasesClient) ExportPreparer(ctx context.Context, resourceGroupN
 // ExportSender sends the Export request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ExportSender(req *http.Request) (future DatabasesExportFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (ier ImportExportResponse, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesExportFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesExportFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		ier.Response.Response, err = future.GetResult(sender)
+		if ier.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesExportFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && ier.Response.Response.StatusCode != http.StatusNoContent {
+			ier, err = client.ExportResponder(ier.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.DatabasesExportFuture", "Result", ier.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -382,7 +455,6 @@ func (client DatabasesClient) ExportSender(req *http.Request) (future DatabasesE
 func (client DatabasesClient) ExportResponder(resp *http.Response) (result ImportExportResponse, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -425,6 +497,7 @@ func (client DatabasesClient) Get(ctx context.Context, resourceGroupName string,
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -458,8 +531,7 @@ func (client DatabasesClient) GetPreparer(ctx context.Context, resourceGroupName
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -467,7 +539,6 @@ func (client DatabasesClient) GetSender(req *http.Request) (*http.Response, erro
 func (client DatabasesClient) GetResponder(resp *http.Response) (result Database, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -509,6 +580,7 @@ func (client DatabasesClient) GetByElasticPool(ctx context.Context, resourceGrou
 	result, err = client.GetByElasticPoolResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "GetByElasticPool", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -540,8 +612,7 @@ func (client DatabasesClient) GetByElasticPoolPreparer(ctx context.Context, reso
 // GetByElasticPoolSender sends the GetByElasticPool request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) GetByElasticPoolSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetByElasticPoolResponder handles the response to the GetByElasticPool request. The method always
@@ -549,7 +620,6 @@ func (client DatabasesClient) GetByElasticPoolSender(req *http.Request) (*http.R
 func (client DatabasesClient) GetByElasticPoolResponder(resp *http.Response) (result Database, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -591,6 +661,7 @@ func (client DatabasesClient) GetByRecommendedElasticPool(ctx context.Context, r
 	result, err = client.GetByRecommendedElasticPoolResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "GetByRecommendedElasticPool", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -622,8 +693,7 @@ func (client DatabasesClient) GetByRecommendedElasticPoolPreparer(ctx context.Co
 // GetByRecommendedElasticPoolSender sends the GetByRecommendedElasticPool request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) GetByRecommendedElasticPoolSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetByRecommendedElasticPoolResponder handles the response to the GetByRecommendedElasticPool request. The method always
@@ -631,7 +701,6 @@ func (client DatabasesClient) GetByRecommendedElasticPoolSender(req *http.Reques
 func (client DatabasesClient) GetByRecommendedElasticPoolResponder(resp *http.Response) (result Database, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -671,7 +740,7 @@ func (client DatabasesClient) Import(ctx context.Context, resourceGroupName stri
 
 	result, err = client.ImportSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Import", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Import", nil, "Failure sending request")
 		return
 	}
 
@@ -704,13 +773,38 @@ func (client DatabasesClient) ImportPreparer(ctx context.Context, resourceGroupN
 // ImportSender sends the Import request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ImportSender(req *http.Request) (future DatabasesImportFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (ier ImportExportResponse, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesImportFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesImportFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		ier.Response.Response, err = future.GetResult(sender)
+		if ier.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesImportFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && ier.Response.Response.StatusCode != http.StatusNoContent {
+			ier, err = client.ImportResponder(ier.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.DatabasesImportFuture", "Result", ier.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -719,7 +813,6 @@ func (client DatabasesClient) ImportSender(req *http.Request) (future DatabasesI
 func (client DatabasesClient) ImportResponder(resp *http.Response) (result ImportExportResponse, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -760,6 +853,7 @@ func (client DatabasesClient) ListByElasticPool(ctx context.Context, resourceGro
 	result, err = client.ListByElasticPoolResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "ListByElasticPool", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -790,8 +884,7 @@ func (client DatabasesClient) ListByElasticPoolPreparer(ctx context.Context, res
 // ListByElasticPoolSender sends the ListByElasticPool request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ListByElasticPoolSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByElasticPoolResponder handles the response to the ListByElasticPool request. The method always
@@ -799,7 +892,6 @@ func (client DatabasesClient) ListByElasticPoolSender(req *http.Request) (*http.
 func (client DatabasesClient) ListByElasticPoolResponder(resp *http.Response) (result DatabaseListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -840,6 +932,7 @@ func (client DatabasesClient) ListByRecommendedElasticPool(ctx context.Context, 
 	result, err = client.ListByRecommendedElasticPoolResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "ListByRecommendedElasticPool", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -870,8 +963,7 @@ func (client DatabasesClient) ListByRecommendedElasticPoolPreparer(ctx context.C
 // ListByRecommendedElasticPoolSender sends the ListByRecommendedElasticPool request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ListByRecommendedElasticPoolSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByRecommendedElasticPoolResponder handles the response to the ListByRecommendedElasticPool request. The method always
@@ -879,7 +971,6 @@ func (client DatabasesClient) ListByRecommendedElasticPoolSender(req *http.Reque
 func (client DatabasesClient) ListByRecommendedElasticPoolResponder(resp *http.Response) (result DatabaseListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -922,6 +1013,7 @@ func (client DatabasesClient) ListByServer(ctx context.Context, resourceGroupNam
 	result, err = client.ListByServerResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "ListByServer", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -957,8 +1049,7 @@ func (client DatabasesClient) ListByServerPreparer(ctx context.Context, resource
 // ListByServerSender sends the ListByServer request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ListByServerSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByServerResponder handles the response to the ListByServer request. The method always
@@ -966,7 +1057,6 @@ func (client DatabasesClient) ListByServerSender(req *http.Request) (*http.Respo
 func (client DatabasesClient) ListByServerResponder(resp *http.Response) (result DatabaseListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -1007,6 +1097,7 @@ func (client DatabasesClient) ListMetricDefinitions(ctx context.Context, resourc
 	result, err = client.ListMetricDefinitionsResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "ListMetricDefinitions", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -1037,8 +1128,7 @@ func (client DatabasesClient) ListMetricDefinitionsPreparer(ctx context.Context,
 // ListMetricDefinitionsSender sends the ListMetricDefinitions request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ListMetricDefinitionsSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListMetricDefinitionsResponder handles the response to the ListMetricDefinitions request. The method always
@@ -1046,7 +1136,6 @@ func (client DatabasesClient) ListMetricDefinitionsSender(req *http.Request) (*h
 func (client DatabasesClient) ListMetricDefinitionsResponder(resp *http.Response) (result MetricDefinitionListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -1088,6 +1177,7 @@ func (client DatabasesClient) ListMetrics(ctx context.Context, resourceGroupName
 	result, err = client.ListMetricsResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "ListMetrics", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -1119,8 +1209,7 @@ func (client DatabasesClient) ListMetricsPreparer(ctx context.Context, resourceG
 // ListMetricsSender sends the ListMetrics request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ListMetricsSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListMetricsResponder handles the response to the ListMetrics request. The method always
@@ -1128,7 +1217,6 @@ func (client DatabasesClient) ListMetricsSender(req *http.Request) (*http.Respon
 func (client DatabasesClient) ListMetricsResponder(resp *http.Response) (result MetricListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -1161,7 +1249,7 @@ func (client DatabasesClient) Pause(ctx context.Context, resourceGroupName strin
 
 	result, err = client.PauseSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Pause", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Pause", nil, "Failure sending request")
 		return
 	}
 
@@ -1193,13 +1281,28 @@ func (client DatabasesClient) PausePreparer(ctx context.Context, resourceGroupNa
 // PauseSender sends the Pause request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) PauseSender(req *http.Request) (future DatabasesPauseFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesPauseFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesPauseFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -1208,7 +1311,6 @@ func (client DatabasesClient) PauseSender(req *http.Request) (future DatabasesPa
 func (client DatabasesClient) PauseResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -1255,6 +1357,7 @@ func (client DatabasesClient) Rename(ctx context.Context, resourceGroupName stri
 	result, err = client.RenameResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Rename", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -1287,8 +1390,7 @@ func (client DatabasesClient) RenamePreparer(ctx context.Context, resourceGroupN
 // RenameSender sends the Rename request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) RenameSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // RenameResponder handles the response to the Rename request. The method always
@@ -1296,7 +1398,6 @@ func (client DatabasesClient) RenameSender(req *http.Request) (*http.Response, e
 func (client DatabasesClient) RenameResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByClosing())
 	result.Response = resp
@@ -1328,7 +1429,7 @@ func (client DatabasesClient) Resume(ctx context.Context, resourceGroupName stri
 
 	result, err = client.ResumeSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Resume", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Resume", nil, "Failure sending request")
 		return
 	}
 
@@ -1360,13 +1461,28 @@ func (client DatabasesClient) ResumePreparer(ctx context.Context, resourceGroupN
 // ResumeSender sends the Resume request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) ResumeSender(req *http.Request) (future DatabasesResumeFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesResumeFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesResumeFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -1375,7 +1491,6 @@ func (client DatabasesClient) ResumeSender(req *http.Request) (future DatabasesR
 func (client DatabasesClient) ResumeResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -1408,7 +1523,7 @@ func (client DatabasesClient) Update(ctx context.Context, resourceGroupName stri
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.DatabasesClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -1442,13 +1557,38 @@ func (client DatabasesClient) UpdatePreparer(ctx context.Context, resourceGroupN
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client DatabasesClient) UpdateSender(req *http.Request) (future DatabasesUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client DatabasesClient) (d Database, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.DatabasesUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		d.Response.Response, err = future.GetResult(sender)
+		if d.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.DatabasesUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && d.Response.Response.StatusCode != http.StatusNoContent {
+			d, err = client.UpdateResponder(d.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.DatabasesUpdateFuture", "Result", d.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -1457,7 +1597,6 @@ func (client DatabasesClient) UpdateSender(req *http.Request) (future DatabasesU
 func (client DatabasesClient) UpdateResponder(resp *http.Response) (result Database, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

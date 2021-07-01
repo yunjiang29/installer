@@ -5,18 +5,20 @@ import (
 	"sort"
 	"strings"
 
+	survey "github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/core"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	survey "gopkg.in/AlecAivazis/survey.v1"
 
 	"github.com/openshift/installer/pkg/types/openstack"
 )
 
+const (
+	noExtNet = "<none>"
+)
+
 // Platform collects OpenStack-specific configuration.
 func Platform() (*openstack.Platform, error) {
-	validValuesFetcher := NewValidValuesFetcher()
-
-	cloudNames, err := validValuesFetcher.GetCloudNames()
+	cloudNames, err := getCloudNames()
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +33,7 @@ func Platform() (*openstack.Platform, error) {
 				Options: cloudNames,
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				value := ans.(string)
+				value := ans.(core.OptionAnswer).Value
 				i := sort.SearchStrings(cloudNames, value)
 				if i == len(cloudNames) || cloudNames[i] != value {
 					return errors.Errorf("invalid cloud name %q, should be one of %+v", value, strings.Join(cloudNames, ", "))
@@ -41,13 +43,14 @@ func Platform() (*openstack.Platform, error) {
 		},
 	}, &cloud)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed UserInput")
 	}
 
-	networkNames, err := validValuesFetcher.GetNetworkNames(cloud)
+	networkNames, err := getExternalNetworkNames(cloud)
 	if err != nil {
 		return nil, err
 	}
+	networkNames = append(networkNames, noExtNet)
 	sort.Strings(networkNames)
 	var extNet string
 	err = survey.Ask([]*survey.Question{
@@ -56,9 +59,10 @@ func Platform() (*openstack.Platform, error) {
 				Message: "ExternalNetwork",
 				Help:    "The OpenStack external network name to be used for installation.",
 				Options: networkNames,
+				Default: noExtNet,
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				value := ans.(string)
+				value := ans.(core.OptionAnswer).Value
 				i := sort.SearchStrings(networkNames, value)
 				if i == len(networkNames) || networkNames[i] != value {
 					return errors.Errorf("invalid network name %q, should be one of %+v", value, strings.Join(networkNames, ", "))
@@ -67,38 +71,43 @@ func Platform() (*openstack.Platform, error) {
 			}),
 		},
 	}, &extNet)
+	if extNet == noExtNet {
+		extNet = ""
+	}
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed UserInput")
 	}
 
-	floatingIPNames, err := validValuesFetcher.GetFloatingIPNames(cloud, extNet)
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(floatingIPNames)
-	var lbFloatingIP string
-	err = survey.Ask([]*survey.Question{
-		{
-			Prompt: &survey.Select{
-				Message: "APIFloatingIPAddress",
-				Help:    "The Floating IP address used for external access to the OpenShift API.",
-				Options: floatingIPNames,
+	var apiFloatingIP string
+	if extNet != "" {
+		floatingIPNames, err := getFloatingIPNames(cloud, extNet)
+		if err != nil {
+			return nil, err
+		}
+		sort.Strings(floatingIPNames)
+		err = survey.Ask([]*survey.Question{
+			{
+				Prompt: &survey.Select{
+					Message: "APIFloatingIPAddress",
+					Help:    "The Floating IP address used for external access to the OpenShift API.",
+					Options: floatingIPNames,
+				},
+				Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
+					value := ans.(core.OptionAnswer).Value
+					i := sort.SearchStrings(floatingIPNames, value)
+					if i == len(floatingIPNames) || floatingIPNames[i] != value {
+						return errors.Errorf("invalid floating IP %q, should be one of %+v", value, strings.Join(floatingIPNames, ", "))
+					}
+					return nil
+				}),
 			},
-			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				value := ans.(string)
-				i := sort.SearchStrings(floatingIPNames, value)
-				if i == len(floatingIPNames) || floatingIPNames[i] != value {
-					return errors.Errorf("invalid floating IP %q, should be one of %+v", value, strings.Join(floatingIPNames, ", "))
-				}
-				return nil
-			}),
-		},
-	}, &lbFloatingIP)
-	if err != nil {
-		return nil, err
+		}, &apiFloatingIP)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed UserInput")
+		}
 	}
 
-	flavorNames, err := validValuesFetcher.GetFlavorNames(cloud)
+	flavorNames, err := getFlavorNames(cloud)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +121,7 @@ func Platform() (*openstack.Platform, error) {
 				Options: flavorNames,
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				value := ans.(string)
+				value := ans.(core.OptionAnswer).Value
 				i := sort.SearchStrings(flavorNames, value)
 				if i == len(flavorNames) || flavorNames[i] != value {
 					return errors.Errorf("invalid flavor name %q, should be one of %+v", value, strings.Join(flavorNames, ", "))
@@ -122,40 +131,15 @@ func Platform() (*openstack.Platform, error) {
 		},
 	}, &flavor)
 	if err != nil {
-		return nil, err
-	}
-
-	trunkSupport := "0"
-	var i int
-	netExts, err := validValuesFetcher.GetNetworkExtensionsAliases(cloud)
-	if err != nil {
-		logrus.Warning("Could not retrieve networking extension aliases. Assuming trunk ports are not supported.")
-	} else {
-		sort.Strings(netExts)
-		i = sort.SearchStrings(netExts, "trunk")
-		if i != len(netExts) && netExts[i] == "trunk" {
-			trunkSupport = "1"
-		}
-	}
-
-	octaviaSupport := "0"
-	serviceCatalog, err := validValuesFetcher.GetServiceCatalog(cloud)
-	if err != nil {
-		logrus.Warning("Could not retrieve service catalog. Assuming there is no Octavia load balancer service available.")
-	} else {
-		sort.Strings(serviceCatalog)
-		i = sort.SearchStrings(serviceCatalog, "octavia")
-		if i != len(serviceCatalog) && serviceCatalog[i] == "octavia" {
-			octaviaSupport = "1"
-		}
+		return nil, errors.Wrap(err, "failed UserInput")
 	}
 
 	return &openstack.Platform{
+		APIFloatingIP:   apiFloatingIP,
 		Cloud:           cloud,
 		ExternalNetwork: extNet,
-		FlavorName:      flavor,
-		LbFloatingIP:    lbFloatingIP,
-		TrunkSupport:    trunkSupport,
-		OctaviaSupport:  octaviaSupport,
+		DefaultMachinePlatform: &openstack.MachinePool{
+			FlavorName: flavor,
+		},
 	}, nil
 }

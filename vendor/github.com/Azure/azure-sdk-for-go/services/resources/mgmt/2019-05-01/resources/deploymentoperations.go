@@ -36,7 +36,9 @@ func NewDeploymentOperationsClient(subscriptionID string) DeploymentOperationsCl
 	return NewDeploymentOperationsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewDeploymentOperationsClientWithBaseURI creates an instance of the DeploymentOperationsClient client.
+// NewDeploymentOperationsClientWithBaseURI creates an instance of the DeploymentOperationsClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewDeploymentOperationsClientWithBaseURI(baseURI string, subscriptionID string) DeploymentOperationsClient {
 	return DeploymentOperationsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -85,6 +87,7 @@ func (client DeploymentOperationsClient) Get(ctx context.Context, resourceGroupN
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "resources.DeploymentOperationsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -115,8 +118,7 @@ func (client DeploymentOperationsClient) GetPreparer(ctx context.Context, resour
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client DeploymentOperationsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -124,7 +126,6 @@ func (client DeploymentOperationsClient) GetSender(req *http.Request) (*http.Res
 func (client DeploymentOperationsClient) GetResponder(resp *http.Response) (result DeploymentOperation, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -175,6 +176,7 @@ func (client DeploymentOperationsClient) GetAtManagementGroupScope(ctx context.C
 	result, err = client.GetAtManagementGroupScopeResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "resources.DeploymentOperationsClient", "GetAtManagementGroupScope", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -204,8 +206,7 @@ func (client DeploymentOperationsClient) GetAtManagementGroupScopePreparer(ctx c
 // GetAtManagementGroupScopeSender sends the GetAtManagementGroupScope request. The method will close the
 // http.Response Body if it receives an error.
 func (client DeploymentOperationsClient) GetAtManagementGroupScopeSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
 }
 
 // GetAtManagementGroupScopeResponder handles the response to the GetAtManagementGroupScope request. The method always
@@ -213,7 +214,6 @@ func (client DeploymentOperationsClient) GetAtManagementGroupScopeSender(req *ht
 func (client DeploymentOperationsClient) GetAtManagementGroupScopeResponder(resp *http.Response) (result DeploymentOperation, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -260,6 +260,7 @@ func (client DeploymentOperationsClient) GetAtSubscriptionScope(ctx context.Cont
 	result, err = client.GetAtSubscriptionScopeResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "resources.DeploymentOperationsClient", "GetAtSubscriptionScope", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -289,8 +290,7 @@ func (client DeploymentOperationsClient) GetAtSubscriptionScopePreparer(ctx cont
 // GetAtSubscriptionScopeSender sends the GetAtSubscriptionScope request. The method will close the
 // http.Response Body if it receives an error.
 func (client DeploymentOperationsClient) GetAtSubscriptionScopeSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetAtSubscriptionScopeResponder handles the response to the GetAtSubscriptionScope request. The method always
@@ -298,7 +298,6 @@ func (client DeploymentOperationsClient) GetAtSubscriptionScopeSender(req *http.
 func (client DeploymentOperationsClient) GetAtSubscriptionScopeResponder(resp *http.Response) (result DeploymentOperation, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -351,6 +350,11 @@ func (client DeploymentOperationsClient) List(ctx context.Context, resourceGroup
 	result.dolr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "resources.DeploymentOperationsClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.dolr.hasNextLink() && result.dolr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -383,8 +387,7 @@ func (client DeploymentOperationsClient) ListPreparer(ctx context.Context, resou
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client DeploymentOperationsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -392,7 +395,6 @@ func (client DeploymentOperationsClient) ListSender(req *http.Request) (*http.Re
 func (client DeploymentOperationsClient) ListResponder(resp *http.Response) (result DeploymentOperationsListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -481,6 +483,11 @@ func (client DeploymentOperationsClient) ListAtManagementGroupScope(ctx context.
 	result.dolr, err = client.ListAtManagementGroupScopeResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "resources.DeploymentOperationsClient", "ListAtManagementGroupScope", resp, "Failure responding to request")
+		return
+	}
+	if result.dolr.hasNextLink() && result.dolr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -512,8 +519,7 @@ func (client DeploymentOperationsClient) ListAtManagementGroupScopePreparer(ctx 
 // ListAtManagementGroupScopeSender sends the ListAtManagementGroupScope request. The method will close the
 // http.Response Body if it receives an error.
 func (client DeploymentOperationsClient) ListAtManagementGroupScopeSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
 }
 
 // ListAtManagementGroupScopeResponder handles the response to the ListAtManagementGroupScope request. The method always
@@ -521,7 +527,6 @@ func (client DeploymentOperationsClient) ListAtManagementGroupScopeSender(req *h
 func (client DeploymentOperationsClient) ListAtManagementGroupScopeResponder(resp *http.Response) (result DeploymentOperationsListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -606,6 +611,11 @@ func (client DeploymentOperationsClient) ListAtSubscriptionScope(ctx context.Con
 	result.dolr, err = client.ListAtSubscriptionScopeResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "resources.DeploymentOperationsClient", "ListAtSubscriptionScope", resp, "Failure responding to request")
+		return
+	}
+	if result.dolr.hasNextLink() && result.dolr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -637,8 +647,7 @@ func (client DeploymentOperationsClient) ListAtSubscriptionScopePreparer(ctx con
 // ListAtSubscriptionScopeSender sends the ListAtSubscriptionScope request. The method will close the
 // http.Response Body if it receives an error.
 func (client DeploymentOperationsClient) ListAtSubscriptionScopeSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAtSubscriptionScopeResponder handles the response to the ListAtSubscriptionScope request. The method always
@@ -646,7 +655,6 @@ func (client DeploymentOperationsClient) ListAtSubscriptionScopeSender(req *http
 func (client DeploymentOperationsClient) ListAtSubscriptionScopeResponder(resp *http.Response) (result DeploymentOperationsListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

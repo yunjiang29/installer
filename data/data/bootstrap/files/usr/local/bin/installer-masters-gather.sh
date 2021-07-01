@@ -16,15 +16,23 @@ echo "Gathering master failed systemd unit status ..."
 mkdir -p "${ARTIFACTS}/unit-status"
 sed -n 's/^\* \([^ ]*\) .*/\1/p' < "${ARTIFACTS}/failed-units.txt" | while read -r UNIT
 do
-    systemctl status "${UNIT}" >& "${ARTIFACTS}/unit-status/${UNIT}.txt"
+    systemctl status --full "${UNIT}" >& "${ARTIFACTS}/unit-status/${UNIT}.txt"
+    journalctl -u "${UNIT}" > "${ARTIFACTS}/unit-status/${UNIT}.log"
 done
 
 echo "Gathering master journals ..."
 mkdir -p "${ARTIFACTS}/journals"
-for service in kubelet crio machine-config-daemon-host pivot
+for service in kubelet crio machine-config-daemon-host pivot openshift-azure-routes openshift-gcp-routes
 do
     journalctl --boot --no-pager --output=short --unit="${service}" > "${ARTIFACTS}/journals/${service}.log"
 done
+
+echo "Gathering master networking ..."
+mkdir -p "${ARTIFACTS}/network"
+ip addr >& "${ARTIFACTS}/network/ip-addr.txt"
+ip route >& "${ARTIFACTS}/network/ip-route.txt"
+hostname >& "${ARTIFACTS}/network/hostname.txt"
+cp -r /etc/resolv.conf "${ARTIFACTS}/network/"
 
 echo "Gathering master containers ..."
 mkdir -p "${ARTIFACTS}/containers"
@@ -34,10 +42,11 @@ do
     crictl logs "${container}" >& "${ARTIFACTS}/containers/${container_name}-${container}.log"
     crictl inspect "${container}" >& "${ARTIFACTS}/containers/${container_name}-${container}.inspect"
 done
-for container in $(podman ps --all --quiet)
+
+podman ps --all --format "{{ .ID }} {{ .Names }}" | while read -r container_id container_name
 do
-    podman logs "${container}" >& "${ARTIFACTS}/containers/${container}.log"
-    podman inspect "${container}" >& "${ARTIFACTS}/containers/${container}.inspect"
+    podman logs "${container_id}" >& "${ARTIFACTS}/containers/${container_name}-${container_id}.log"
+    podman inspect "${container_id}" >& "${ARTIFACTS}/containers/${container_name}-${container_id}.inspect"
 done
 
 echo "Waiting for logs ..."

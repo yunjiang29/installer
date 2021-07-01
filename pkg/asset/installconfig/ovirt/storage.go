@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/core"
 	ovirtsdk4 "github.com/ovirt/go-ovirt"
-	"gopkg.in/AlecAivazis/survey.v1"
+	"github.com/pkg/errors"
 
 	"github.com/openshift/installer/pkg/types/ovirt"
 )
@@ -28,14 +30,15 @@ func askStorage(c *ovirtsdk4.Connection, p *ovirt.Platform, clusterName string) 
 		domainsForCluster[domain.MustName()] = domain
 		domainNames = append(domainNames, domain.MustName())
 	}
-	err = survey.AskOne(&survey.Select{
-		Message: "oVirt storage domain",
-		Help:    "The storage domain will be used to create the disks of all the cluster nodes.",
-		Options: domainNames,
-	},
+	if err := survey.AskOne(
+		&survey.Select{
+			Message: "Storage domain",
+			Help:    "The storage domain will be used to create the disks of all the cluster nodes.",
+			Options: domainNames,
+		},
 		&storageDomainName,
-		func(ans interface{}) error {
-			choice := ans.(string)
+		survey.WithValidator(func(ans interface{}) error {
+			choice := ans.(core.OptionAnswer).Value
 			sort.Strings(domainNames)
 			i := sort.SearchStrings(domainNames, choice)
 			if i == len(domainNames) || domainNames[i] != choice {
@@ -47,6 +50,9 @@ func askStorage(c *ovirtsdk4.Connection, p *ovirt.Platform, clusterName string) 
 			}
 			p.StorageDomainID = domain.MustId()
 			return nil
-		})
-	return err
+		}),
+	); err != nil {
+		return errors.Wrap(err, "failed UserInput")
+	}
+	return nil
 }

@@ -37,7 +37,8 @@ func NewSyncMembersClient(subscriptionID string) SyncMembersClient {
 	return NewSyncMembersClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewSyncMembersClientWithBaseURI creates an instance of the SyncMembersClient client.
+// NewSyncMembersClientWithBaseURI creates an instance of the SyncMembersClient client using a custom endpoint.  Use
+// this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewSyncMembersClientWithBaseURI(baseURI string, subscriptionID string) SyncMembersClient {
 	return SyncMembersClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -70,7 +71,7 @@ func (client SyncMembersClient) CreateOrUpdate(ctx context.Context, resourceGrou
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -106,13 +107,38 @@ func (client SyncMembersClient) CreateOrUpdatePreparer(ctx context.Context, reso
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) CreateOrUpdateSender(req *http.Request) (future SyncMembersCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client SyncMembersClient) (sm SyncMember, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncMembersCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.SyncMembersCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		sm.Response.Response, err = future.GetResult(sender)
+		if sm.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncMembersCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && sm.Response.Response.StatusCode != http.StatusNoContent {
+			sm, err = client.CreateOrUpdateResponder(sm.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.SyncMembersCreateOrUpdateFuture", "Result", sm.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -121,7 +147,6 @@ func (client SyncMembersClient) CreateOrUpdateSender(req *http.Request) (future 
 func (client SyncMembersClient) CreateOrUpdateResponder(resp *http.Response) (result SyncMember, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -156,7 +181,7 @@ func (client SyncMembersClient) Delete(ctx context.Context, resourceGroupName st
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -190,13 +215,28 @@ func (client SyncMembersClient) DeletePreparer(ctx context.Context, resourceGrou
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) DeleteSender(req *http.Request) (future SyncMembersDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client SyncMembersClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncMembersDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.SyncMembersDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -205,7 +245,6 @@ func (client SyncMembersClient) DeleteSender(req *http.Request) (future SyncMemb
 func (client SyncMembersClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -247,6 +286,7 @@ func (client SyncMembersClient) Get(ctx context.Context, resourceGroupName strin
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -279,8 +319,7 @@ func (client SyncMembersClient) GetPreparer(ctx context.Context, resourceGroupNa
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -288,7 +327,6 @@ func (client SyncMembersClient) GetSender(req *http.Request) (*http.Response, er
 func (client SyncMembersClient) GetResponder(resp *http.Response) (result SyncMember, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -331,6 +369,11 @@ func (client SyncMembersClient) ListBySyncGroup(ctx context.Context, resourceGro
 	result.smlr, err = client.ListBySyncGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "ListBySyncGroup", resp, "Failure responding to request")
+		return
+	}
+	if result.smlr.hasNextLink() && result.smlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -362,8 +405,7 @@ func (client SyncMembersClient) ListBySyncGroupPreparer(ctx context.Context, res
 // ListBySyncGroupSender sends the ListBySyncGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) ListBySyncGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListBySyncGroupResponder handles the response to the ListBySyncGroup request. The method always
@@ -371,7 +413,6 @@ func (client SyncMembersClient) ListBySyncGroupSender(req *http.Request) (*http.
 func (client SyncMembersClient) ListBySyncGroupResponder(resp *http.Response) (result SyncMemberListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -452,6 +493,11 @@ func (client SyncMembersClient) ListMemberSchemas(ctx context.Context, resourceG
 	result.sfsplr, err = client.ListMemberSchemasResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "ListMemberSchemas", resp, "Failure responding to request")
+		return
+	}
+	if result.sfsplr.hasNextLink() && result.sfsplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -484,8 +530,7 @@ func (client SyncMembersClient) ListMemberSchemasPreparer(ctx context.Context, r
 // ListMemberSchemasSender sends the ListMemberSchemas request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) ListMemberSchemasSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListMemberSchemasResponder handles the response to the ListMemberSchemas request. The method always
@@ -493,7 +538,6 @@ func (client SyncMembersClient) ListMemberSchemasSender(req *http.Request) (*htt
 func (client SyncMembersClient) ListMemberSchemasResponder(resp *http.Response) (result SyncFullSchemaPropertiesListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -565,7 +609,7 @@ func (client SyncMembersClient) RefreshMemberSchema(ctx context.Context, resourc
 
 	result, err = client.RefreshMemberSchemaSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "RefreshMemberSchema", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "RefreshMemberSchema", nil, "Failure sending request")
 		return
 	}
 
@@ -599,13 +643,28 @@ func (client SyncMembersClient) RefreshMemberSchemaPreparer(ctx context.Context,
 // RefreshMemberSchemaSender sends the RefreshMemberSchema request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) RefreshMemberSchemaSender(req *http.Request) (future SyncMembersRefreshMemberSchemaFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client SyncMembersClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncMembersRefreshMemberSchemaFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.SyncMembersRefreshMemberSchemaFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -614,7 +673,6 @@ func (client SyncMembersClient) RefreshMemberSchemaSender(req *http.Request) (fu
 func (client SyncMembersClient) RefreshMemberSchemaResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -649,7 +707,7 @@ func (client SyncMembersClient) Update(ctx context.Context, resourceGroupName st
 
 	result, err = client.UpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "Update", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.SyncMembersClient", "Update", nil, "Failure sending request")
 		return
 	}
 
@@ -685,13 +743,38 @@ func (client SyncMembersClient) UpdatePreparer(ctx context.Context, resourceGrou
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client SyncMembersClient) UpdateSender(req *http.Request) (future SyncMembersUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client SyncMembersClient) (sm SyncMember, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncMembersUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.SyncMembersUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		sm.Response.Response, err = future.GetResult(sender)
+		if sm.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.SyncMembersUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && sm.Response.Response.StatusCode != http.StatusNoContent {
+			sm, err = client.UpdateResponder(sm.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.SyncMembersUpdateFuture", "Result", sm.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -700,7 +783,6 @@ func (client SyncMembersClient) UpdateSender(req *http.Request) (future SyncMemb
 func (client SyncMembersClient) UpdateResponder(resp *http.Response) (result SyncMember, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

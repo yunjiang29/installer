@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"sort"
 
+	survey "github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/core"
 	"github.com/pkg/errors"
-	survey "gopkg.in/AlecAivazis/survey.v1"
 
 	"github.com/openshift/installer/pkg/asset"
 	awsconfig "github.com/openshift/installer/pkg/asset/installconfig/aws"
 	azureconfig "github.com/openshift/installer/pkg/asset/installconfig/azure"
+	baremetalconfig "github.com/openshift/installer/pkg/asset/installconfig/baremetal"
 	gcpconfig "github.com/openshift/installer/pkg/asset/installconfig/gcp"
+	ibmcloudconfig "github.com/openshift/installer/pkg/asset/installconfig/ibmcloud"
+	kubevirtconfig "github.com/openshift/installer/pkg/asset/installconfig/kubevirt"
 	libvirtconfig "github.com/openshift/installer/pkg/asset/installconfig/libvirt"
 	openstackconfig "github.com/openshift/installer/pkg/asset/installconfig/openstack"
 	ovirtconfig "github.com/openshift/installer/pkg/asset/installconfig/ovirt"
@@ -18,7 +22,10 @@ import (
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/aws"
 	"github.com/openshift/installer/pkg/types/azure"
+	"github.com/openshift/installer/pkg/types/baremetal"
 	"github.com/openshift/installer/pkg/types/gcp"
+	"github.com/openshift/installer/pkg/types/ibmcloud"
+	"github.com/openshift/installer/pkg/types/kubevirt"
 	"github.com/openshift/installer/pkg/types/libvirt"
 	"github.com/openshift/installer/pkg/types/none"
 	"github.com/openshift/installer/pkg/types/openstack"
@@ -52,18 +59,28 @@ func (a *platform) Generate(asset.Parents) error {
 		if err != nil {
 			return err
 		}
-	case libvirt.Name:
-		a.Libvirt, err = libvirtconfig.Platform()
-		if err != nil {
-			return err
-		}
 	case azure.Name:
 		a.Azure, err = azureconfig.Platform()
 		if err != nil {
 			return err
 		}
+	case baremetal.Name:
+		a.BareMetal, err = baremetalconfig.Platform()
+		if err != nil {
+			return err
+		}
 	case gcp.Name:
 		a.GCP, err = gcpconfig.Platform()
+		if err != nil {
+			return err
+		}
+	case ibmcloud.Name:
+		a.IBMCloud, err = ibmcloudconfig.Platform()
+		if err != nil {
+			return err
+		}
+	case libvirt.Name:
+		a.Libvirt, err = libvirtconfig.Platform()
 		if err != nil {
 			return err
 		}
@@ -74,13 +91,18 @@ func (a *platform) Generate(asset.Parents) error {
 		if err != nil {
 			return err
 		}
+	case ovirt.Name:
+		a.Ovirt, err = ovirtconfig.Platform()
+		if err != nil {
+			return err
+		}
 	case vsphere.Name:
 		a.VSphere, err = vsphereconfig.Platform()
 		if err != nil {
 			return err
 		}
-	case ovirt.Name:
-		a.Ovirt, err = ovirtconfig.Platform()
+	case kubevirt.Name:
+		a.Kubevirt, err = kubevirtconfig.Platform()
 		if err != nil {
 			return err
 		}
@@ -105,7 +127,7 @@ func (a *platform) queryUserForPlatform() (platform string, err error) {
 				Help:    "The platform on which the cluster will run.  For a full list of platforms, including those not supported by this wizard, see https://github.com/openshift/installer",
 			},
 			Validate: survey.ComposeValidators(survey.Required, func(ans interface{}) error {
-				choice := ans.(string)
+				choice := ans.(core.OptionAnswer).Value
 				i := sort.SearchStrings(types.PlatformNames, choice)
 				if i == len(types.PlatformNames) || types.PlatformNames[i] != choice {
 					return errors.Errorf("invalid platform %q", choice)

@@ -28,12 +28,22 @@ func Test_PrintFields(t *testing.T) {
     baseDomain <string> -required-
       BaseDomain is the base domain to which the cluster should belong.
 
+    bootstrapInPlace <object>
+      BootstrapInPlace is the configuration for installing a single node with bootstrap in place installation.
+
     compute <[]object>
       Compute is the configuration for the machines that comprise the compute nodes.
       MachinePool is a pool of machines to be installed.
 
     controlPlane <object>
       ControlPlane is the configuration for the machines that comprise the control plane.
+
+    credentialsMode <string>
+      Valid Values: "","Mint","Passthrough","Manual"
+      CredentialsMode is used to explicitly set the mode with which CredentialRequests are satisfied. 
+ If this field is set, then the installer will not attempt to query the cloud permissions before attempting installation. If the field is not set or empty, then the installer will perform its normal verification that the credentials provided are sufficient to perform an installation. 
+ There are three possible values for this field, but the valid values are dependent upon the platform being used. "Mint": create new credentials with a subset of the overall permissions for each CredentialsRequest "Passthrough": copy the credentials with all of the overall permissions for each CredentialsRequest "Manual": CredentialsRequests must be handled manually by the user 
+ For each of the following platforms, the field can set to the specified values. For all other platforms, the field must not be set. AWS: "Mint", "Passthrough", "Manual" Azure: "Mint", "Passthrough", "Manual" GCP: "Mint", "Passthrough", "Manual"
 
     fips <boolean>
       Default: false
@@ -86,6 +96,12 @@ func Test_PrintFields(t *testing.T) {
     gcp <object>
       GCP is the configuration used when installing on Google Cloud Platform.
 
+    ibmcloud <object>
+      IBMCloud is the configuration used when installing on IBM Cloud.
+
+    kubevirt <object>
+      Kubevirt is the configuration used when installing on kubevirt.
+
     libvirt <object>
       Libvirt is the configuration used when installing on libvirt.
 
@@ -109,6 +125,12 @@ func Test_PrintFields(t *testing.T) {
     defaultMachinePlatform <object>
       DefaultMachinePlatform is the default configuration used when installing on AWS for machine pools which do not define their own platform configuration.
 
+    experimentalPropagateUserTags <boolean>
+      ExperimentalPropagateUserTags is an experimental flag that directs in-cluster operators to include the specified user tags in the tags of the AWS resources that the operators create.
+
+    hostedZone <string>
+      HostedZone is the ID of an existing hosted zone into which to add DNS records for the cluster's internal API. An existing hosted zone can only be used when also using existing subnets. The hosted zone must be associated with the VPC containing the subnets. Leave the hosted zone unset to have the installer create the hosted zone on your behalf.
+
     region <string> -required-
       Region specifies the AWS region where the cluster will be created.
 
@@ -124,8 +146,15 @@ func Test_PrintFields(t *testing.T) {
 	}, {
 		path: []string{"platform", "azure"},
 		desc: `FIELDS:
+    armEndpoint <string>
+      ARMEndpoint is the endpoint for the Azure API when installing on Azure Stack.
+
     baseDomainResourceGroupName <string>
       BaseDomainResourceGroupName specifies the resource group where the Azure DNS zone for the base domain is found.
+
+    cloudName <string>
+      Valid Values: "","AzurePublicCloud","AzureUSGovernmentCloud","AzureChinaCloud","AzureGermanCloud","AzureStackCloud"
+      cloudName is the name of the Azure cloud environment which can be used to configure the Azure SDK with the appropriate Azure API endpoints. If empty, the value is equal to "AzurePublicCloud".
 
     computeSubnet <string>
       ComputeSubnet specifies an existing subnet for use by compute nodes
@@ -139,8 +168,16 @@ func Test_PrintFields(t *testing.T) {
     networkResourceGroupName <string>
       NetworkResourceGroupName specifies the network resource group that contains an existing VNet
 
+    outboundType <string>
+      Default: "Loadbalancer"
+      Valid Values: "","Loadbalancer","UserDefinedRouting"
+      OutboundType is a strategy for how egress from cluster is achieved. When not specified default is "Loadbalancer".
+
     region <string> -required-
       Region specifies the Azure region where the cluster will be created.
+
+    resourceGroupName <string>
+      ResourceGroupName is the name of an already existing resource group where the cluster should be installed. This resource group should only be used for this specific cluster and the cluster components will assume assume ownership of all resources in the resource group. Destroying the cluster using installer will delete this resource group. This resource group must be empty with no other resources when trying to use it for creating a cluster. If empty, a new resource group will created for the cluster.
 
     virtualNetwork <string>
       VirtualNetwork specifies the name of an existing VNet for the installer to use`,
@@ -192,7 +229,7 @@ VERSION:  v1
 
 RESOURCE: <object>
   InstallConfig is the configuration for an OpenShift install.
-`,
+		`,
 	}, {
 		path: []string{"publish"},
 		desc: `
@@ -201,7 +238,7 @@ VERSION:  v1
 
 RESOURCE: <string>
   Publish controls how the user facing endpoints of the cluster like the Kubernetes API, OpenShift routes etc. are exposed. When no strategy is specified, the strategy is "External".
-`,
+		`,
 	}, {
 		path: []string{"platform"},
 		desc: `
@@ -210,7 +247,7 @@ VERSION:  v1
 
 RESOURCE: <object>
   Platform is the configuration for the specific platform upon which to perform the installation.
-`,
+		`,
 	}, {
 		path: []string{"platform", "aws"},
 		desc: `
@@ -219,7 +256,7 @@ VERSION:  v1
 
 RESOURCE: <object>
   AWS is the configuration used when installing on AWS.
-`,
+		`,
 	}, {
 		path: []string{"platform", "azure"},
 		desc: `
@@ -227,8 +264,8 @@ KIND:     InstallConfig
 VERSION:  v1
 
 RESOURCE: <object>
-  Azure is the configuration used when installing on Azure.    
-`,
+  Azure is the configuration used when installing on Azure.
+		`,
 	}, {
 		path: []string{"platform", "aws", "region"},
 		desc: `
@@ -236,8 +273,8 @@ KIND:     InstallConfig
 VERSION:  v1
 
 RESOURCE: <string>
-  Region specifies the AWS region where the cluster will be created.    
-`,
+  Region specifies the AWS region where the cluster will be created.
+		`,
 	}, {
 		path: []string{"platform", "aws", "subnets"},
 		desc: `
@@ -245,8 +282,8 @@ KIND:     InstallConfig
 VERSION:  v1
 
 RESOURCE: <[]string>
-  Subnets specifies existing subnets (by ID) where cluster resources will be created.  Leave unset to have the installer create subnets in a new VPC on your behalf.    
-`,
+  Subnets specifies existing subnets (by ID) where cluster resources will be created.  Leave unset to have the installer create subnets in a new VPC on your behalf.
+		`,
 	}, {
 		path: []string{"platform", "aws", "userTags"},
 		desc: `
@@ -254,8 +291,8 @@ KIND:     InstallConfig
 VERSION:  v1
 
 RESOURCE: <object>
-  UserTags additional keys and values that the installer will add as tags to all resources that it creates. Resources created by the cluster itself may not include these tags.    
-`,
+  UserTags additional keys and values that the installer will add as tags to all resources that it creates. Resources created by the cluster itself may not include these tags.
+		`,
 	}, {
 		path: []string{"platform", "aws", "serviceEndpoints"},
 		desc: `
@@ -263,8 +300,8 @@ KIND:     InstallConfig
 VERSION:  v1
 
 RESOURCE: <[]object>
-  ServiceEndpoints list contains custom endpoints which will override default service endpoint of AWS Services. There must be only one ServiceEndpoint for a service.    
-`,
+  ServiceEndpoints list contains custom endpoints which will override default service endpoint of AWS Services. There must be only one ServiceEndpoint for a service.
+		`,
 	}, {
 		path: []string{"platform", "aws", "serviceEndpoints", "url"},
 		desc: `
@@ -273,7 +310,34 @@ VERSION:  v1
 
 RESOURCE: <string>
   URL is fully qualified URI with scheme https, that overrides the default generated endpoint for a client. This must be provided and cannot be empty.
-`,
+		`,
+	}, {
+		path: []string{"compute", "platform", "aws", "iamRole"},
+		desc: `
+KIND:     InstallConfig
+VERSION:  v1
+
+RESOURCE: <string>
+  IAMRole is the name of the IAM Role to use for the instance profile of the machine. Leave unset to have the installer create the IAM Role on your behalf.
+	`,
+	}, {
+		path: []string{"controlPlane", "platform", "aws", "iamRole"},
+		desc: `
+KIND:     InstallConfig
+VERSION:  v1
+
+RESOURCE: <string>
+  IAMRole is the name of the IAM Role to use for the instance profile of the machine. Leave unset to have the installer create the IAM Role on your behalf.
+	`,
+	}, {
+		path: []string{"platform", "aws", "defaultMachinePlatform", "iamRole"},
+		desc: `
+KIND:     InstallConfig
+VERSION:  v1
+
+RESOURCE: <string>
+  IAMRole is the name of the IAM Role to use for the instance profile of the machine. Leave unset to have the installer create the IAM Role on your behalf.
+	`,
 	}}
 	for _, test := range cases {
 		t.Run("", func(t *testing.T) {

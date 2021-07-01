@@ -4,11 +4,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openshift/installer/pkg/types/azure"
 )
 
 func TestCloudProviderConfig(t *testing.T) {
 
 	config := CloudProviderConfig{
+		CloudName:                azure.PublicCloud,
+		ResourceGroupName:        "clusterid-rg",
 		GroupLocation:            "westeurope",
 		ResourcePrefix:           "clusterid",
 		SubscriptionID:           "subID",

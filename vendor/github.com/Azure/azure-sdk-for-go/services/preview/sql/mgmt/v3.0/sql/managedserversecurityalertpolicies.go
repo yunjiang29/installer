@@ -39,7 +39,8 @@ func NewManagedServerSecurityAlertPoliciesClient(subscriptionID string) ManagedS
 }
 
 // NewManagedServerSecurityAlertPoliciesClientWithBaseURI creates an instance of the
-// ManagedServerSecurityAlertPoliciesClient client.
+// ManagedServerSecurityAlertPoliciesClient client using a custom endpoint.  Use this when interacting with an Azure
+// cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewManagedServerSecurityAlertPoliciesClientWithBaseURI(baseURI string, subscriptionID string) ManagedServerSecurityAlertPoliciesClient {
 	return ManagedServerSecurityAlertPoliciesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -69,7 +70,7 @@ func (client ManagedServerSecurityAlertPoliciesClient) CreateOrUpdate(ctx contex
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -103,13 +104,38 @@ func (client ManagedServerSecurityAlertPoliciesClient) CreateOrUpdatePreparer(ct
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedServerSecurityAlertPoliciesClient) CreateOrUpdateSender(req *http.Request) (future ManagedServerSecurityAlertPoliciesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client ManagedServerSecurityAlertPoliciesClient) (mssap ManagedServerSecurityAlertPolicy, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("sql.ManagedServerSecurityAlertPoliciesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		mssap.Response.Response, err = future.GetResult(sender)
+		if mssap.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && mssap.Response.Response.StatusCode != http.StatusNoContent {
+			mssap, err = client.CreateOrUpdateResponder(mssap.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesCreateOrUpdateFuture", "Result", mssap.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -118,7 +144,6 @@ func (client ManagedServerSecurityAlertPoliciesClient) CreateOrUpdateSender(req 
 func (client ManagedServerSecurityAlertPoliciesClient) CreateOrUpdateResponder(resp *http.Response) (result ManagedServerSecurityAlertPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -158,6 +183,7 @@ func (client ManagedServerSecurityAlertPoliciesClient) Get(ctx context.Context, 
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -188,8 +214,7 @@ func (client ManagedServerSecurityAlertPoliciesClient) GetPreparer(ctx context.C
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedServerSecurityAlertPoliciesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -197,7 +222,6 @@ func (client ManagedServerSecurityAlertPoliciesClient) GetSender(req *http.Reque
 func (client ManagedServerSecurityAlertPoliciesClient) GetResponder(resp *http.Response) (result ManagedServerSecurityAlertPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -238,6 +262,11 @@ func (client ManagedServerSecurityAlertPoliciesClient) ListByInstance(ctx contex
 	result.mssaplr, err = client.ListByInstanceResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "sql.ManagedServerSecurityAlertPoliciesClient", "ListByInstance", resp, "Failure responding to request")
+		return
+	}
+	if result.mssaplr.hasNextLink() && result.mssaplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -267,8 +296,7 @@ func (client ManagedServerSecurityAlertPoliciesClient) ListByInstancePreparer(ct
 // ListByInstanceSender sends the ListByInstance request. The method will close the
 // http.Response Body if it receives an error.
 func (client ManagedServerSecurityAlertPoliciesClient) ListByInstanceSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByInstanceResponder handles the response to the ListByInstance request. The method always
@@ -276,7 +304,6 @@ func (client ManagedServerSecurityAlertPoliciesClient) ListByInstanceSender(req 
 func (client ManagedServerSecurityAlertPoliciesClient) ListByInstanceResponder(resp *http.Response) (result ManagedServerSecurityAlertPolicyListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

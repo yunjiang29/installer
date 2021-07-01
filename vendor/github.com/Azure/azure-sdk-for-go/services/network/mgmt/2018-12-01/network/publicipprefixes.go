@@ -35,7 +35,9 @@ func NewPublicIPPrefixesClient(subscriptionID string) PublicIPPrefixesClient {
 	return NewPublicIPPrefixesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewPublicIPPrefixesClientWithBaseURI creates an instance of the PublicIPPrefixesClient client.
+// NewPublicIPPrefixesClientWithBaseURI creates an instance of the PublicIPPrefixesClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewPublicIPPrefixesClientWithBaseURI(baseURI string, subscriptionID string) PublicIPPrefixesClient {
 	return PublicIPPrefixesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -64,7 +66,7 @@ func (client PublicIPPrefixesClient) CreateOrUpdate(ctx context.Context, resourc
 
 	result, err = client.CreateOrUpdateSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "CreateOrUpdate", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "CreateOrUpdate", nil, "Failure sending request")
 		return
 	}
 
@@ -97,13 +99,38 @@ func (client PublicIPPrefixesClient) CreateOrUpdatePreparer(ctx context.Context,
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client PublicIPPrefixesClient) CreateOrUpdateSender(req *http.Request) (future PublicIPPrefixesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client PublicIPPrefixesClient) (pip PublicIPPrefix, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.PublicIPPrefixesCreateOrUpdateFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		pip.Response.Response, err = future.GetResult(sender)
+		if pip.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesCreateOrUpdateFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && pip.Response.Response.StatusCode != http.StatusNoContent {
+			pip, err = client.CreateOrUpdateResponder(pip.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesCreateOrUpdateFuture", "Result", pip.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -112,7 +139,6 @@ func (client PublicIPPrefixesClient) CreateOrUpdateSender(req *http.Request) (fu
 func (client PublicIPPrefixesClient) CreateOrUpdateResponder(resp *http.Response) (result PublicIPPrefix, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -143,7 +169,7 @@ func (client PublicIPPrefixesClient) Delete(ctx context.Context, resourceGroupNa
 
 	result, err = client.DeleteSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "Delete", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "Delete", nil, "Failure sending request")
 		return
 	}
 
@@ -174,13 +200,28 @@ func (client PublicIPPrefixesClient) DeletePreparer(ctx context.Context, resourc
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client PublicIPPrefixesClient) DeleteSender(req *http.Request) (future PublicIPPrefixesDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client PublicIPPrefixesClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesDeleteFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.PublicIPPrefixesDeleteFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -189,7 +230,6 @@ func (client PublicIPPrefixesClient) DeleteSender(req *http.Request) (future Pub
 func (client PublicIPPrefixesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -228,6 +268,7 @@ func (client PublicIPPrefixesClient) Get(ctx context.Context, resourceGroupName 
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -260,8 +301,7 @@ func (client PublicIPPrefixesClient) GetPreparer(ctx context.Context, resourceGr
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client PublicIPPrefixesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -269,7 +309,6 @@ func (client PublicIPPrefixesClient) GetSender(req *http.Request) (*http.Respons
 func (client PublicIPPrefixesClient) GetResponder(resp *http.Response) (result PublicIPPrefix, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -308,6 +347,11 @@ func (client PublicIPPrefixesClient) List(ctx context.Context, resourceGroupName
 	result.piplr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "List", resp, "Failure responding to request")
+		return
+	}
+	if result.piplr.hasNextLink() && result.piplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -336,8 +380,7 @@ func (client PublicIPPrefixesClient) ListPreparer(ctx context.Context, resourceG
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client PublicIPPrefixesClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -345,7 +388,6 @@ func (client PublicIPPrefixesClient) ListSender(req *http.Request) (*http.Respon
 func (client PublicIPPrefixesClient) ListResponder(resp *http.Response) (result PublicIPPrefixListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -419,6 +461,11 @@ func (client PublicIPPrefixesClient) ListAll(ctx context.Context) (result Public
 	result.piplr, err = client.ListAllResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "ListAll", resp, "Failure responding to request")
+		return
+	}
+	if result.piplr.hasNextLink() && result.piplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+		return
 	}
 
 	return
@@ -446,8 +493,7 @@ func (client PublicIPPrefixesClient) ListAllPreparer(ctx context.Context) (*http
 // ListAllSender sends the ListAll request. The method will close the
 // http.Response Body if it receives an error.
 func (client PublicIPPrefixesClient) ListAllSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAllResponder handles the response to the ListAll request. The method always
@@ -455,7 +501,6 @@ func (client PublicIPPrefixesClient) ListAllSender(req *http.Request) (*http.Res
 func (client PublicIPPrefixesClient) ListAllResponder(resp *http.Response) (result PublicIPPrefixListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -524,7 +569,7 @@ func (client PublicIPPrefixesClient) UpdateTags(ctx context.Context, resourceGro
 
 	result, err = client.UpdateTagsSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "UpdateTags", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "UpdateTags", nil, "Failure sending request")
 		return
 	}
 
@@ -557,13 +602,38 @@ func (client PublicIPPrefixesClient) UpdateTagsPreparer(ctx context.Context, res
 // UpdateTagsSender sends the UpdateTags request. The method will close the
 // http.Response Body if it receives an error.
 func (client PublicIPPrefixesClient) UpdateTagsSender(req *http.Request) (future PublicIPPrefixesUpdateTagsFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client PublicIPPrefixesClient) (pip PublicIPPrefix, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.PublicIPPrefixesUpdateTagsFuture")
+			return
+		}
+		sender := autorest.DecorateSender(client, autorest.DoRetryForStatusCodes(client.RetryAttempts, client.RetryDuration, autorest.StatusCodesForRetry...))
+		pip.Response.Response, err = future.GetResult(sender)
+		if pip.Response.Response == nil && err == nil {
+			err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesUpdateTagsFuture", "Result", nil, "received nil response and error")
+		}
+		if err == nil && pip.Response.Response.StatusCode != http.StatusNoContent {
+			pip, err = client.UpdateTagsResponder(pip.Response.Response)
+			if err != nil {
+				err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesUpdateTagsFuture", "Result", pip.Response.Response, "Failure responding to request")
+			}
+		}
+		return
+	}
 	return
 }
 
@@ -572,7 +642,6 @@ func (client PublicIPPrefixesClient) UpdateTagsSender(req *http.Request) (future
 func (client PublicIPPrefixesClient) UpdateTagsResponder(resp *http.Response) (result PublicIPPrefix, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

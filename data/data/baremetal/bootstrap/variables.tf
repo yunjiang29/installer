@@ -13,13 +13,7 @@ variable "ignition" {
   description = "The content of the bootstrap ignition file."
 }
 
-variable "external_bridge" {
-  type        = string
-  description = "The name of the bridge providing external access"
+variable "bridges" {
+  type        = list(map(string))
+  description = "A list of network bridge maps, containing the interface name and optionally the MAC address"
 }
-
-variable "provisioning_bridge" {
-  type        = string
-  description = "The name of the bridge used for provisioning"
-}
-

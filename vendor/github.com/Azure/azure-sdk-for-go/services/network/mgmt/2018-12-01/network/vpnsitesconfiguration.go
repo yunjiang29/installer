@@ -35,7 +35,9 @@ func NewVpnSitesConfigurationClient(subscriptionID string) VpnSitesConfiguration
 	return NewVpnSitesConfigurationClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVpnSitesConfigurationClientWithBaseURI creates an instance of the VpnSitesConfigurationClient client.
+// NewVpnSitesConfigurationClientWithBaseURI creates an instance of the VpnSitesConfigurationClient client using a
+// custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds,
+// Azure stack).
 func NewVpnSitesConfigurationClientWithBaseURI(baseURI string, subscriptionID string) VpnSitesConfigurationClient {
 	return VpnSitesConfigurationClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -64,7 +66,7 @@ func (client VpnSitesConfigurationClient) Download(ctx context.Context, resource
 
 	result, err = client.DownloadSender(req)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.VpnSitesConfigurationClient", "Download", result.Response(), "Failure sending request")
+		err = autorest.NewErrorWithError(err, "network.VpnSitesConfigurationClient", "Download", nil, "Failure sending request")
 		return
 	}
 
@@ -97,13 +99,28 @@ func (client VpnSitesConfigurationClient) DownloadPreparer(ctx context.Context, 
 // DownloadSender sends the Download request. The method will close the
 // http.Response Body if it receives an error.
 func (client VpnSitesConfigurationClient) DownloadSender(req *http.Request) (future VpnSitesConfigurationDownloadFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
-	future.Future, err = azure.NewFutureFromResponse(resp)
+	var azf azure.Future
+	azf, err = azure.NewFutureFromResponse(resp)
+	future.FutureAPI = &azf
+	future.Result = func(client VpnSitesConfigurationClient) (ar autorest.Response, err error) {
+		var done bool
+		done, err = future.DoneWithContext(context.Background(), client)
+		if err != nil {
+			err = autorest.NewErrorWithError(err, "network.VpnSitesConfigurationDownloadFuture", "Result", future.Response(), "Polling failure")
+			return
+		}
+		if !done {
+			err = azure.NewAsyncOpIncompleteError("network.VpnSitesConfigurationDownloadFuture")
+			return
+		}
+		ar.Response = future.Response()
+		return
+	}
 	return
 }
 
@@ -112,7 +129,6 @@ func (client VpnSitesConfigurationClient) DownloadSender(req *http.Request) (fut
 func (client VpnSitesConfigurationClient) DownloadResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp

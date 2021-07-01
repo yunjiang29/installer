@@ -18,9 +18,8 @@
       security_groups:
       - "{{ os_sg_master }}"
       allowed_address_pairs:
-      - ip_address: "{{ os_subnet_range | next_nth_usable(5) }}"
-      - ip_address: "{{ os_subnet_range | next_nth_usable(6) }}"
-      - ip_address: "{{ os_subnet_range | next_nth_usable(7) }}"
+      - ip_address: "{{ os_apiVIP }}"
+      - ip_address: "{{ os_ingressVIP }}"
     with_indexed_items: "{{ [os_port_master] * os_cp_nodes_number }}"
     register: ports
 
@@ -45,7 +44,8 @@
 
   - name: 'List the Server groups'
     command:
-      cmd: "openstack server group list -f json -c ID -c Name"
+      # os-compute-api-version 2.15 or higher is required for the 'soft-anti-affinity' policy
+      cmd: "openstack --os-compute-api-version=2.15 server group list -f json -c ID -c Name"
     register: server_group_list
 
   - name: 'Parse the Server group ID from existing'
@@ -58,6 +58,7 @@
 
   - name: 'Create the Control Plane server group'
     command:
+      # os-compute-api-version 2.15 or higher is required for the 'soft-anti-affinity' policy
       cmd: "openstack --os-compute-api-version=2.15 server group create -f json -c id --policy=soft-anti-affinity {{ os_cp_server_group_name }}"
     register: server_group_created
     when:
@@ -84,4 +85,5 @@
       - port-name: "{{ os_port_master }}-{{ item.0 }}"
       scheduler_hints:
         group: "{{ server_group_id }}"
+      meta: "{{ cluster_id_tag }}"
     with_indexed_items: "{{ [os_cp_server_name] * os_cp_nodes_number }}"

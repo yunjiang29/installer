@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Usage: ./hack/update-rhcos-bootimage.py https://releases-art-rhcos.svc.ci.openshift.org/storage/releases/ootpa/410.8.20190401.0/meta.json amd64
+# This script updates the legacy metadata.  We hope to remove it soon.
+# See docs/dev/pinned-coreos.md for more information.
 import codecs,os,sys,json,argparse
 import urllib.parse
 import urllib.request
@@ -10,7 +11,7 @@ RHCOS_RELEASES_APP = 'https://releases-art-rhcos.svc.ci.openshift.org'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("meta", action='store')
-parser.add_argument("arch", action='store', choices=['amd64', 's390x', 'ppc64le'])
+parser.add_argument("arch", action='store', choices=['amd64', 's390x', 'ppc64le', 'aarch64'])
 args = parser.parse_args()
 
 metadata_dir = os.path.join(os.path.dirname(sys.argv[0]), "../data/data")
